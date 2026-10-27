@@ -121,5 +121,6 @@ ejecución aprobada (20 tests, 294 assertions). La imagen ya contenía el códig
 actual, así que no se reconstruyó. La pantalla usa datos de demostración ya
 existentes; no se insertaron datos persistentes. Se conserva la limitación de
 no poder establecer la causa exacta del contenedor histórico con exit code 137.
-El trabajo continúa sin commit ni push hasta la revisión final del diff.
-Entregas 2–6 siguen pendientes.
+El commit de la entrega `14325d73f9b5ca9a11c041d5c13858700b46e4b3` se publicó
+mediante push normal a `origin/main`; SHA local y remoto coincidieron en la
+verificación posterior. Entregas 2–6 siguen pendientes.
