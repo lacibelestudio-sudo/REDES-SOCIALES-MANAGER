@@ -27,7 +27,7 @@ function metaOwnerActingIn(): array
     return [$user, $workspace];
 }
 
-function fakeFacebookOAuthUser(string $token = 'short-token'): SocialiteUser
+function fakeFacebookOAuthUser(string $token = 'short-token', ?callable $onWith = null): SocialiteUser
 {
     $user = (new SocialiteUser)
         ->map(['id' => 'fb-user-1', 'name' => 'Ada'])
@@ -35,6 +35,13 @@ function fakeFacebookOAuthUser(string $token = 'short-token'): SocialiteUser
 
     $provider = Mockery::mock(AbstractProvider::class);
     $provider->shouldReceive('stateless')->andReturnSelf();
+    $provider->shouldReceive('with')->andReturnUsing(function (array $parameters) use ($provider, $onWith) {
+        if ($onWith !== null) {
+            $onWith($parameters);
+        }
+
+        return $provider;
+    });
     $provider->shouldReceive('setScopes')->andReturnSelf();
     $provider->shouldReceive('redirectUrl')->andReturnSelf();
     $provider->shouldReceive('usingGraphVersion')->andReturnSelf();
@@ -45,6 +52,14 @@ function fakeFacebookOAuthUser(string $token = 'short-token'): SocialiteUser
     Socialite::shouldReceive('driver')->with('facebook')->andReturn($provider);
 
     return $user;
+}
+
+function metaOAuthCallback(array $query): string
+{
+    $state = 'meta-test-oauth-state';
+    test()->withSession(['accounts.meta.oauth_state' => $state]);
+
+    return route('accounts.meta.callback', [...$query, 'state' => $state]);
 }
 
 function fakeMetaGraphResponses(): void
@@ -84,10 +99,16 @@ test('redirect sends the user into the facebook oauth dance now that facebook is
 
     expect(Platform::launchedMetaGraphPlatforms())->toBe([Platform::Facebook, Platform::Instagram]);
 
-    fakeFacebookOAuthUser();
+    $parameters = [];
+    fakeFacebookOAuthUser(onWith: function (array $received) use (&$parameters): void {
+        $parameters = $received;
+    });
 
     test()->get(route('accounts.meta.redirect'))
         ->assertRedirect('https://facebook.test/oauth');
+
+    expect($parameters['state'] ?? null)->toBeString()->toHaveLength(40)
+        ->and(session('accounts.meta.oauth_state'))->toBe($parameters['state']);
 });
 
 test('callback stashes assets server-side and renders a browser-safe projection', function () {
@@ -95,7 +116,7 @@ test('callback stashes assets server-side and renders a browser-safe projection'
     fakeFacebookOAuthUser();
     fakeMetaGraphResponses();
 
-    test()->get(route('accounts.meta.callback', ['code' => 'fb-auth-code']))
+    test()->get(metaOAuthCallback(['code' => 'fb-auth-code']))
         // The `accounts/connect-meta` selection screen is a frontend page a
         // later task builds; the backend contract this test proves (component
         // name + browser-safe projection shape) doesn't depend on that file
@@ -127,9 +148,22 @@ test('callback stashes assets server-side and renders a browser-safe projection'
 test('callback surfaces a friendly message when facebook denies the connection', function () {
     metaOwnerActingIn();
 
-    test()->get(route('accounts.meta.callback', ['error' => 'access_denied']))
+    test()->get(metaOAuthCallback(['error' => 'access_denied']))
         ->assertRedirect(route('accounts.index'))
         ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'declined'));
+
+    expect(ConnectedAccount::withoutGlobalScopes()->count())->toBe(0);
+});
+
+test('callback rejects a mismatched OAuth state without consuming the pending state', function () {
+    metaOwnerActingIn();
+    Socialite::shouldReceive('driver')->never();
+
+    test()->withSession(['accounts.meta.oauth_state' => 'expected-state'])
+        ->get(route('accounts.meta.callback', ['code' => 'fb-auth-code', 'state' => 'unexpected-state']))
+        ->assertRedirect(route('accounts.index'))
+        ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'could not be verified'))
+        ->assertSessionHas('accounts.meta.oauth_state', 'expected-state');
 
     expect(ConnectedAccount::withoutGlobalScopes()->count())->toBe(0);
 });
@@ -139,14 +173,14 @@ test('callback reuses an existing stash when Facebook hits the callback twice wi
     fakeFacebookOAuthUser();
     fakeMetaGraphResponses();
 
-    test()->get(route('accounts.meta.callback', ['code' => 'fb-auth-code']))
+    test()->get(metaOAuthCallback(['code' => 'fb-auth-code']))
         ->assertInertia(fn (Assert $page) => $page
             ->component('accounts/connect-meta', false)
             ->has('assets', 1)
         );
 
     // Second hit (no Socialite mock needed): stash already present → picker again, no error.
-    test()->get(route('accounts.meta.callback', ['code' => 'fb-auth-code']))
+    test()->get(route('accounts.meta.callback', ['code' => 'fb-auth-code', 'state' => 'meta-test-oauth-state']))
         ->assertInertia(fn (Assert $page) => $page
             ->component('accounts/connect-meta', false)
             ->has('assets', 1)
@@ -164,7 +198,7 @@ test('callback surfaces a friendly message when the graph api fails', function (
         '*/oauth/access_token*' => Http::response(['error' => ['message' => 'rate limited']], 429),
     ]);
 
-    test()->get(route('accounts.meta.callback', ['code' => 'fb-auth-code']))
+    test()->get(metaOAuthCallback(['code' => 'fb-auth-code']))
         ->assertRedirect(route('accounts.index'))
         ->assertSessionHas('error', fn (string $message): bool => str_contains($message, "couldn't connect")
             || str_contains($message, "couldn't retrieve"));

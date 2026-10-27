@@ -81,12 +81,26 @@ Bun y Recharts se mantienen.
 - Implementación, controles requeridos y despliegue local verificados. El
   trabajo permanece en la rama actual; no se han modificado credenciales,
   APP_KEY, configuración de base de datos ni volúmenes.
-- No se avanza a las entregas posteriores. El commit y el push normal al remoto
-  confirmado se registran en el historial una vez publicados.
+- No se avanza a las entregas posteriores. El commit de la entrega
+  `14325d73f9b5ca9a11c041d5c13858700b46e4b3` ya se publicó mediante push
+  normal a `origin/main`, con coincidencia del SHA local y remoto.
 
-## Entrega 2 — Conexiones reales
+## Entrega 2 — Conexiones reales (en curso; no completada)
 
 Validar Facebook, Instagram y LinkedIn con cuentas de prueba autorizadas. Separar perfil y página LinkedIn y comprobar capacidades del producto OAuth contratado/aprobado. Registrar publicación y lectura de métricas, permisos, errores y renovación. No enviar contenido real de clientes sin autorización editorial. Determinar si se necesita la prueba Upload-Post/Ayrshare descrita en arquitectura.
+
+El inventario de capacidades, rutas OAuth, configuración observada, pruebas
+aisladas, referencias de código y bloqueos está en
+[MATRIZ_CONEXIONES.md](./MATRIZ_CONEXIONES.md). El conector Meta añadió
+validación explícita de `state` OAuth porque el flujo Socialite stateless no
+estaba verificando ese valor; la prueba focalizada cubre el envío y el rechazo
+de un estado incorrecto.
+
+La configuración local efectiva no contiene credenciales de aplicaciones
+Meta ni LinkedIn. Los registros de cuentas existentes no se consideran
+conexiones reales ni evidencia de acceso. Por tanto, ninguna lectura de API ni
+publicación real fue autorizada o ejecutada. La matriz registra la validación
+real como pendiente y Entrega 2 permanece abierta.
 
 ## Entrega 3 — Dashboard y reportes
 
@@ -124,3 +138,17 @@ no poder establecer la causa exacta del contenedor histórico con exit code 137.
 El commit de la entrega `14325d73f9b5ca9a11c041d5c13858700b46e4b3` se publicó
 mediante push normal a `origin/main`; SHA local y remoto coincidieron en la
 verificación posterior. Entregas 2–6 siguen pendientes.
+
+27-10-2026: Entrega 2 continúa abierta. Inventario de Facebook Pages,
+Instagram Business/Creator y LinkedIn personal/organización registrado en
+[MATRIZ_CONEXIONES.md](./MATRIZ_CONEXIONES.md). En pruebas aisladas con SQLite
+en memoria pasaron `ConnectMetaTest` (13 tests, 93 assertions), el grupo de
+conexión Meta/LinkedIn (31 tests, 174 assertions) y las pruebas focalizadas de
+publicación y métricas de los tres proveedores (70 tests, 196 assertions);
+Pint y Larastan nivel 7 también pasaron. Estos resultados verifican flujos con
+respuestas simuladas, no acceso a proveedores reales. No se modificó ni
+reconstruyó el servicio local. El contenedor temporal de pruebas y sus
+volúmenes anónimos ya se retiraron; el punto de montaje vacío `vendor` también
+se eliminó. Pendiente: credenciales, permisos y autorización OAuth reales,
+lecturas de métricas con cuentas autorizadas y validación del caso de
+publicación antes de cualquier envío.

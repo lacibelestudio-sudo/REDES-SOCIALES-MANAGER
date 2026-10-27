@@ -15,6 +15,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -31,15 +32,15 @@ use Throwable;
  * (Facebook, Instagram), enumerates the user's Pages/linked IG assets, and
  * lets them pick which assets to connect as which platform.
  *
- * OAuth is intentionally stateless: this route is already behind `auth`, and
- * connecting still requires an explicit POST on the selection screen. Socialite
- * session "state" is unreliable behind TLS-terminating tunnels/proxies and also
- * races when Facebook (or the browser) hits the callback twice — the second hit
- * then fails with "authorization code has been used".
+ * Socialite is stateless to avoid its callback/session state racing when Facebook
+ * hits the callback twice. The flow still keeps and validates its own OAuth
+ * state value to protect the callback against CSRF.
  */
 class MetaConnectionController extends Controller
 {
     private const string SESSION_KEY = 'accounts.meta.connect';
+
+    private const string OAUTH_STATE_KEY = 'accounts.meta.oauth_state';
 
     public function __construct(
         private readonly MetaAssetEnumerator $enumerator,
@@ -53,16 +54,18 @@ class MetaConnectionController extends Controller
 
         $request->user()->can('create', ConnectedAccount::class) ?: abort(403);
 
-        // Drop any half-finished picker stash so a re-connect starts clean.
-        $request->session()->forget(self::SESSION_KEY);
+        // Drop any half-finished flow so a re-connect starts clean.
+        $request->session()->forget([self::SESSION_KEY, self::OAUTH_STATE_KEY]);
+        $state = Str::random(40);
+        $request->session()->put(self::OAUTH_STATE_KEY, $state);
         $request->session()->save();
 
         // setScopes (not scopes): Socialite's Facebook driver defaults include
         // `email`, which Facebook Login now rejects as invalid for this app
         // type. We only want Page/IG Graph permissions from Platform::scopes().
-        // stateless(): see class docblock — auth + selection POST is our CSRF gate.
         return $this->driver()
             ->stateless()
+            ->with(['state' => $state])
             ->setScopes($this->scopes())
             ->redirectUrl(route('accounts.meta.callback'))
             ->redirect();
@@ -90,6 +93,12 @@ class MetaConnectionController extends Controller
         $request->user()->can('create', ConnectedAccount::class) ?: abort(403);
 
         if ($request->filled('error')) {
+            if (! $this->hasValidOAuthState($request)) {
+                Log::warning('Meta OAuth callback rejected because state did not match.');
+
+                return $this->failed('This Facebook login attempt could not be verified. Please try connecting again.');
+            }
+
             Log::warning('Meta OAuth provider returned an error.', [
                 'error' => $request->query('error'),
                 'error_description' => $request->query('error_description'),
@@ -98,10 +107,16 @@ class MetaConnectionController extends Controller
             return $this->failed('You declined to connect your Facebook account.');
         }
 
-        // Duplicate callback (Facebook/browser double-hit) after a successful
-        // exchange: re-show the picker instead of flashing a false failure.
+        // Duplicate provider/browser callbacks after a successful exchange may
+        // re-show the authenticated user's picker without reusing the state.
         if ($this->hasStashedAssets($request)) {
             return $this->renderAssetPicker($request);
+        }
+
+        if (! $this->hasValidOAuthState($request)) {
+            Log::warning('Meta OAuth callback rejected because state did not match.');
+
+            return $this->failed('This Facebook login attempt could not be verified. Please try connecting again.');
         }
 
         if (! $request->filled('code')) {
@@ -365,6 +380,20 @@ class MetaConnectionController extends Controller
         return is_array($stash) && is_array($stash['assets'] ?? null) && $stash['assets'] !== [];
     }
 
+    private function hasValidOAuthState(Request $request): bool
+    {
+        $expected = $request->session()->get(self::OAUTH_STATE_KEY);
+        $provided = $request->query('state');
+
+        if (! is_string($expected) || ! is_string($provided) || ! hash_equals($expected, $provided)) {
+            return false;
+        }
+
+        $request->session()->forget(self::OAUTH_STATE_KEY);
+
+        return true;
+    }
+
     private function renderAssetPicker(Request $request): InertiaResponse
     {
         /** @var array{assets: array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string}>} $stash */
@@ -387,8 +416,8 @@ class MetaConnectionController extends Controller
     /**
      * Exchange the Facebook authorization code for a Socialite user.
      *
-     * Always stateless: see class docblock. Auth middleware + the selection
-     * POST are the real CSRF gates for this account-linking flow.
+     * The callback validates the flow's one-time state before exchanging the
+     * authorization code; Socialite remains stateless for duplicate callbacks.
      */
     private function resolveOAuthUser(Request $request): SocialiteUser
     {
