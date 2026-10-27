@@ -171,6 +171,10 @@ function ComparisonItem({ row, rank, isTop }: ComparisonItemProps) {
                     {row.engagement.toLocaleString()}
                 </p>
                 <p className="text-xs text-muted-foreground">engagement</p>
+                <p className="text-xs text-muted-foreground">
+                    {row.measured_targets} of {row.total_targets} destinations
+                    measured
+                </p>
             </div>
         </Link>
     );
@@ -229,8 +233,8 @@ export default function AnalyticsIndex({
                             Analytics
                         </h1>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            Follower growth and post engagement across your
-                            accounts.
+                            Follower counts and accumulated post engagement
+                            across your accounts.
                         </p>
                     </div>
 
@@ -282,28 +286,26 @@ export default function AnalyticsIndex({
                 {!metricsDisabled && (
                     <>
                         {/* Headline numbers — the at-a-glance answer */}
-                        {accounts.length > 0 && (
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                                <StatTile
-                                    label="Followers"
-                                    metric={summary.followers}
-                                    caption={`across ${summary.account_count} ${summary.account_count === 1 ? 'account' : 'accounts'}`}
-                                    deltaLabel={`followers over the last ${rangeLabel}`}
-                                />
-                                <StatTile
-                                    label="Engagement"
-                                    metric={summary.engagement}
-                                    caption="likes, comments & reposts this period"
-                                    deltaLabel="vs previous period"
-                                />
-                                <StatTile
-                                    label="Posts published"
-                                    metric={summary.posts}
-                                    caption="in the selected period"
-                                    deltaLabel="vs previous period"
-                                />
-                            </div>
-                        )}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                            <StatTile
+                                label="Followers"
+                                metric={summary.followers}
+                                caption={`Sum per account; measured for ${summary.followers.coverage.measured} of ${summary.followers.coverage.total} non-Discord accounts`}
+                                deltaLabel={`followers over the last ${rangeLabel}`}
+                            />
+                            <StatTile
+                                label="Engagement"
+                                metric={summary.engagement}
+                                caption={`Latest successful likes, comments & reposts for posts published or partially published in this period; measured for ${summary.engagement.coverage.measured} of ${summary.engagement.coverage.total} destinations`}
+                                deltaLabel="vs previous period"
+                            />
+                            <StatTile
+                                label="Posts published"
+                                metric={summary.posts}
+                                caption="Published or partially published posts in the selected period"
+                                deltaLabel="vs previous period"
+                            />
+                        </div>
 
                         <AnalyticsPollingBanner
                             disabledAccountMetricPlatforms={
@@ -455,8 +457,10 @@ export default function AnalyticsIndex({
                                                         Best performing
                                                     </CardTitle>
                                                     <CardDescription className="mt-1">
-                                                        Highest engagement this
-                                                        period
+                                                        Highest accumulated
+                                                        engagement for posts
+                                                        published or partially
+                                                        published this period
                                                     </CardDescription>
                                                 </div>
                                                 <div className="divide-y divide-border border-t border-border">
@@ -480,8 +484,10 @@ export default function AnalyticsIndex({
                                                     Needs attention
                                                 </CardTitle>
                                                 <CardDescription className="mt-1">
-                                                    Lowest engagement this
-                                                    period
+                                                    Lowest accumulated
+                                                    engagement for posts
+                                                    published or partially
+                                                    published this period
                                                 </CardDescription>
                                             </div>
                                             <div className="divide-y divide-border border-t border-border">

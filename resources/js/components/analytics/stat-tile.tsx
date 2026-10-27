@@ -29,7 +29,9 @@ export function StatTile({
                 </span>
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <span className="font-heading text-3xl leading-none font-semibold tracking-tight tabular-nums">
-                        {metric.value.toLocaleString()}
+                        {metric.value === null
+                            ? 'No data'
+                            : metric.value.toLocaleString()}
                     </span>
                     <DeltaChip delta={metric.delta} label={deltaLabel} />
                 </div>

@@ -1,3 +1,12 @@
+# Contexto de REDES SOCIALES MANAGER
+
+Antes de adaptar el producto, leer [PROYECTO.md](PROYECTO.md),
+[AUDITORIA_BASE.md](AUDITORIA_BASE.md) y [PLAN_IMPLEMENTACION.md](PLAN_IMPLEMENTACION.md).
+El stack real es Laravel/Inertia/React. Para métricas y reportes aplicar
+[CONTRATO_BI.md](CONTRATO_BI.md). Las decisiones de adaptación están en
+[ARQUITECTURA_PRODUCTO.md](ARQUITECTURA_PRODUCTO.md).
+Conservar las reglas técnicas de upstream que siguen a continuación.
+
 <laravel-boost-guidelines>
 === .ai/tooling rules ===
 

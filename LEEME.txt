@@ -1,0 +1,1 @@
+La adaptación documental y la implementación de la Entrega 1 ya están integradas en este repositorio. No apliques de nuevo inicio-adaptacion.patch. Lee PROYECTO.md y PLAN_IMPLEMENTACION.md para el contexto y el estado actual. No se modificaron credenciales, APP_KEY, base de datos ni volúmenes.

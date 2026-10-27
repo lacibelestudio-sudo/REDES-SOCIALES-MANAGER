@@ -51,7 +51,8 @@ class AnalyticsController extends Controller
      */
     private function buildPayload(int $days): array
     {
-        $from = Date::now()->subDays($days);
+        $now = Date::now();
+        $from = $now->copy()->subDays($days);
         $previousFrom = Date::now()->subDays($days * 2);
 
         // Discord webhooks have no follower/member metrics — omit them from the
@@ -60,6 +61,7 @@ class AnalyticsController extends Controller
             ->where('platform', '!=', Platform::Discord->value)
             ->with(['metrics' => fn ($q) => $q
                 ->where('captured_at', '>=', $from)
+                ->whereNotNull('followers')
                 ->orderBy('captured_at')
                 // Drop the per-row `raw` API-response JSON blob — the series only
                 // needs follower/following counts.
@@ -92,19 +94,37 @@ class AnalyticsController extends Controller
             'platforms' => $post->targets->pluck('platform')->map(fn ($p): string => $p->value)->unique()->values()->all(),
         ])->all();
 
-        $ranked = $posts
+        $postsWithMeasuredTargets = $posts
             ->filter(fn (Post $post): bool => $post->targets->contains(
                 fn (PostTarget $t): bool => $t->metrics_status === MetricsStatus::Ok,
-            ))
-            ->map(fn (Post $post): array => [
-                'id' => $post->id,
-                'title' => $this->resolveTitle($post),
-                'published_at' => $post->published_at?->toIso8601String(),
-                'platforms' => $post->targets->pluck('platform')->map(fn ($p): string => $p->value)->unique()->values()->all(),
-                'engagement' => (int) $post->targets->sum(fn (PostTarget $t): int => $t->likes + $t->comments + $t->reposts),
-            ])
+            ));
+
+        $ranked = $postsWithMeasuredTargets
+            ->map(function (Post $post): array {
+                $measuredTargets = $post->targets->filter(
+                    fn (PostTarget $target): bool => $target->metrics_status === MetricsStatus::Ok,
+                );
+
+                return [
+                    'id' => $post->id,
+                    'title' => $this->resolveTitle($post),
+                    'published_at' => $post->published_at?->toIso8601String(),
+                    'platforms' => $post->targets->pluck('platform')->map(fn ($platform): string => $platform->value)->unique()->values()->all(),
+                    'engagement' => (int) $measuredTargets->sum(fn (PostTarget $target): int => $target->likes + $target->comments + $target->reposts),
+                    'measured_targets' => $measuredTargets->count(),
+                    'total_targets' => $post->targets->count(),
+                ];
+            })
             ->sortByDesc('engagement')
             ->values();
+
+        $totalTargets = $posts->sum(fn (Post $post): int => $post->targets->count());
+        $measuredTargets = $posts->sum(fn (Post $post): int => $post->targets
+            ->filter(fn (PostTarget $target): bool => $target->metrics_status === MetricsStatus::Ok)
+            ->count());
+        $totalEngagement = $measuredTargets === 0
+            ? null
+            : (int) $ranked->sum('engagement');
 
         $comparisonTop = $ranked->count() < 10
             ? $ranked->values()->all()
@@ -119,7 +139,9 @@ class AnalyticsController extends Controller
             'posts' => $markers,
             'summary' => $this->buildSummary(
                 $accounts,
-                (int) $ranked->sum('engagement'),
+                $totalEngagement,
+                $measuredTargets,
+                $totalTargets,
                 $posts->count(),
                 $previousFrom,
                 $from,
@@ -132,26 +154,36 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * The headline numbers — total followers, engagement, and posts published.
-     * The follower delta is growth across the selected window; the engagement
-     * and posts deltas compare against the previous equal-length window. Deltas
-     * are null when there's no honest baseline to compare against.
+     * The follower delta is growth across the selected window. Engagement and
+     * post deltas compare against the previous equal-length window.
      *
      * @param  array<int, array<string, mixed>>  $accounts
      * @return array{
      *     account_count: int,
-     *     followers: array{value: int, delta: int|null},
-     *     engagement: array{value: int, delta: int|null},
+     *     followers: array{value: int|null, delta: int|null, coverage: array{measured: int, total: int}},
+     *     engagement: array{value: int|null, delta: int|null, coverage: array{measured: int, total: int}},
      *     posts: array{value: int, delta: int|null},
      * }
      */
-    private function buildSummary(array $accounts, int $totalEngagement, int $postsCount, CarbonInterface $previousFrom, CarbonInterface $from): array
-    {
+    private function buildSummary(
+        array $accounts,
+        ?int $totalEngagement,
+        int $measuredTargetCount,
+        int $totalTargetCount,
+        int $postsCount,
+        CarbonInterface $previousFrom,
+        CarbonInterface $from,
+    ): array {
         $accountsCollection = collect($accounts);
 
-        $totalFollowers = (int) $accountsCollection->sum(fn (array $a): int => (int) ($a['latest_followers'] ?? 0));
+        $measuredAccounts = $accountsCollection->filter(fn (array $account): bool => $account['latest_followers'] !== null);
+        $totalFollowers = $measuredAccounts->isEmpty()
+            ? null
+            : (int) $measuredAccounts->sum(fn (array $account): int => (int) $account['latest_followers']);
         $trackedDeltas = $accountsCollection->pluck('followers_delta')->filter(fn ($d): bool => $d !== null);
-        $followersDelta = $trackedDeltas->isEmpty() ? null : (int) $trackedDeltas->sum();
+        $hasFullFollowerBaseline = $accountsCollection->isNotEmpty()
+            && $trackedDeltas->count() === $accountsCollection->count();
+        $followersDelta = $hasFullFollowerBaseline ? (int) $trackedDeltas->sum() : null;
 
         // Previous window — only used as a baseline for the delta chips.
         $previousPosts = Post::query()
@@ -165,29 +197,39 @@ class AnalyticsController extends Controller
         // Engagement is only measurable on posts that captured Ok metrics, so the
         // baseline for the engagement delta must also require such a post — a
         // previous window of unmeasured posts is not a zero baseline.
-        $previousMeasuredPosts = $previousPosts->filter(fn (Post $post): bool => $post->targets->contains(
-            fn (PostTarget $t): bool => $t->metrics_status === MetricsStatus::Ok,
-        ));
-        $hasEngagementBaseline = $previousMeasuredPosts->isNotEmpty();
-        $previousEngagement = (int) $previousMeasuredPosts->sum(
-            fn (Post $post): int => (int) $post->targets->sum(fn (PostTarget $t): int => $t->likes + $t->comments + $t->reposts),
+        $previousMeasuredTargets = $previousPosts->flatMap(
+            fn (Post $post) => $post->targets->filter(
+                fn (PostTarget $target): bool => $target->metrics_status === MetricsStatus::Ok,
+            ),
         );
-
-        $hasPostBaseline = $previousPosts->isNotEmpty();
+        $hasEngagementBaseline = $previousMeasuredTargets->isNotEmpty();
+        $previousEngagement = (int) $previousMeasuredTargets->sum(
+            fn (PostTarget $target): int => $target->likes + $target->comments + $target->reposts,
+        );
 
         return [
             'account_count' => $accountsCollection->count(),
             'followers' => [
                 'value' => $totalFollowers,
                 'delta' => $followersDelta,
+                'coverage' => [
+                    'measured' => $measuredAccounts->count(),
+                    'total' => $accountsCollection->count(),
+                ],
             ],
             'engagement' => [
                 'value' => $totalEngagement,
-                'delta' => $hasEngagementBaseline ? $totalEngagement - $previousEngagement : null,
+                'delta' => $hasEngagementBaseline && $totalEngagement !== null
+                    ? $totalEngagement - $previousEngagement
+                    : null,
+                'coverage' => [
+                    'measured' => $measuredTargetCount,
+                    'total' => $totalTargetCount,
+                ],
             ],
             'posts' => [
                 'value' => $postsCount,
-                'delta' => $hasPostBaseline ? $postsCount - $previousPosts->count() : null,
+                'delta' => $postsCount - $previousPosts->count(),
             ],
         ];
     }

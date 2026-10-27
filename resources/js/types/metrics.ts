@@ -52,18 +52,25 @@ export type AnalyticsPostMarker = {
 
 export type AnalyticsComparisonRow = AnalyticsPostMarker & {
     engagement: number;
+    measured_targets: number;
+    total_targets: number;
 };
 
 /** A single number with an optional change-over-the-period delta. */
 export type AnalyticsSummaryMetric = {
-    value: number;
+    value: number | null;
     /** Change vs the previous equal-length window; null when there's no baseline. */
     delta: number | null;
 };
 
+export type AnalyticsMetricCoverage = {
+    measured: number;
+    total: number;
+};
+
 export type AnalyticsSummary = {
-    followers: AnalyticsSummaryMetric;
-    engagement: AnalyticsSummaryMetric;
+    followers: AnalyticsSummaryMetric & { coverage: AnalyticsMetricCoverage };
+    engagement: AnalyticsSummaryMetric & { coverage: AnalyticsMetricCoverage };
     posts: AnalyticsSummaryMetric;
     /** How many accounts contribute to the follower total. */
     account_count: number;

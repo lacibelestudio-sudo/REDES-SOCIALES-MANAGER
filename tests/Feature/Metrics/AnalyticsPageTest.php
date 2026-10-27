@@ -68,6 +68,88 @@ test('the follower delta is null without two comparable readings', function (): 
             ->where('accounts.0.followers_delta', null));
 });
 
+test('no connected accounts reports missing measurements and a known zero post count', function (): void {
+    $this->actingAs($this->user)
+        ->get(route('analytics.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.followers.value', null)
+            ->where('summary.followers.coverage.measured', 0)
+            ->where('summary.followers.coverage.total', 0)
+            ->where('summary.engagement.value', null)
+            ->where('summary.engagement.coverage.measured', 0)
+            ->where('summary.engagement.coverage.total', 0)
+            ->where('summary.posts.value', 0)
+            ->where('summary.posts.delta', 0));
+});
+
+test('an account without readings is not represented as zero followers', function (): void {
+    ConnectedAccount::factory()->for($this->workspace)->create();
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.followers.value', null)
+            ->where('summary.followers.coverage.measured', 0)
+            ->where('summary.followers.coverage.total', 1)
+            ->where('accounts.0.latest_followers', null)
+            ->where('summary.followers.delta', null));
+});
+
+test('valid zero follower and engagement measurements remain zero', function (): void {
+    $account = ConnectedAccount::factory()->for($this->workspace)->create();
+    AccountMetric::factory()->create([
+        'connected_account_id' => $account->id,
+        'captured_at' => Date::now(),
+        'followers' => 0,
+    ]);
+
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    PostTarget::factory()->create([
+        'post_id' => $post->id,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 0,
+        'comments' => 0,
+        'reposts' => 0,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.followers.value', 0)
+            ->where('summary.followers.coverage.measured', 1)
+            ->where('summary.followers.coverage.total', 1)
+            ->where('summary.engagement.value', 0)
+            ->where('summary.engagement.coverage.measured', 1)
+            ->where('summary.engagement.coverage.total', 1));
+});
+
+test('follower total declares partial account coverage', function (): void {
+    $measuredAccount = ConnectedAccount::factory()->for($this->workspace)->create();
+    ConnectedAccount::factory()->for($this->workspace)->create();
+    AccountMetric::factory()->create([
+        'connected_account_id' => $measuredAccount->id,
+        'captured_at' => Date::now(),
+        'followers' => 135,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.followers.value', 135)
+            ->where('summary.followers.coverage.measured', 1)
+            ->where('summary.followers.coverage.total', 2)
+            ->where('summary.followers.delta', null));
+});
+
 test('the engagement summary compares against the previous window', function (): void {
     // Previous window (10–20 days ago): one post with 40 engagement.
     $previous = Post::factory()->create([
@@ -105,7 +187,7 @@ test('the engagement summary compares against the previous window', function ():
             ->where('summary.posts.delta', 0));
 });
 
-test('deltas are null when the previous window has no baseline posts', function (): void {
+test('engagement has no baseline when the previous window has no posts', function (): void {
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
         'author_id' => $this->user->id,
@@ -124,7 +206,7 @@ test('deltas are null when the previous window has no baseline posts', function 
         ->assertInertia(fn ($page) => $page
             ->where('summary.engagement.value', 50)
             ->where('summary.engagement.delta', null)
-            ->where('summary.posts.delta', null));
+            ->where('summary.posts.delta', 1));
 });
 
 test('engagement delta is null when the previous window has posts but no captured metrics', function (): void {
@@ -136,11 +218,13 @@ test('engagement delta is null when the previous window has posts but no capture
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDays(15),
     ]);
-    PostTarget::factory()->create([
-        'post_id' => $previous->id,
-        'metrics_status' => MetricsStatus::Failed->value,
-        'likes' => 0, 'comments' => 0, 'reposts' => 0,
-    ]);
+    foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
+        PostTarget::factory()->create([
+            'post_id' => $previous->id,
+            'metrics_status' => $status->value,
+            'likes' => 500, 'comments' => 200, 'reposts' => 100,
+        ]);
+    }
 
     $current = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -163,6 +247,108 @@ test('engagement delta is null when the previous window has posts but no capture
             ->where('summary.engagement.delta', null)
             // The post count baseline still exists (one post each window).
             ->where('summary.posts.delta', 0));
+});
+
+test('summary and ranking include only successfully measured destinations', function (): void {
+    $previous = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDays(15),
+    ]);
+    PostTarget::factory()->create([
+        'post_id' => $previous->id,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 4, 'comments' => 0, 'reposts' => 0,
+    ]);
+    foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
+        PostTarget::factory()->create([
+            'post_id' => $previous->id,
+            'metrics_status' => $status->value,
+            'likes' => 500, 'comments' => 200, 'reposts' => 100,
+        ]);
+    }
+
+    $current = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    PostTarget::factory()->create([
+        'post_id' => $current->id,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 10, 'comments' => 0, 'reposts' => 0,
+    ]);
+    foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
+        PostTarget::factory()->create([
+            'post_id' => $current->id,
+            'metrics_status' => $status->value,
+            'likes' => 500, 'comments' => 200, 'reposts' => 100,
+        ]);
+    }
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index', ['days' => 10]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('summary.engagement.value', 10)
+            ->where('summary.engagement.delta', 6)
+            ->where('summary.engagement.coverage.measured', 1)
+            ->where('summary.engagement.coverage.total', 4)
+            ->where('comparison.top.0.engagement', 10)
+            ->where('comparison.top.0.measured_targets', 1)
+            ->where('comparison.top.0.total_targets', 4));
+});
+
+test('analytics queries remain isolated to the active workspace', function (): void {
+    $account = ConnectedAccount::factory()->for($this->workspace)->create();
+    AccountMetric::factory()->create([
+        'connected_account_id' => $account->id,
+        'captured_at' => Date::now(),
+        'followers' => 7,
+    ]);
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    PostTarget::factory()->create([
+        'post_id' => $post->id,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 9, 'comments' => 0, 'reposts' => 0,
+    ]);
+
+    $otherWorkspace = Workspace::factory()->create();
+    $otherAccount = ConnectedAccount::factory()->for($otherWorkspace)->create();
+    AccountMetric::factory()->create([
+        'connected_account_id' => $otherAccount->id,
+        'captured_at' => Date::now(),
+        'followers' => 700,
+    ]);
+    $otherPost = Post::factory()->create([
+        'workspace_id' => $otherWorkspace->id,
+        'author_id' => User::factory()->create()->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    PostTarget::factory()->create([
+        'post_id' => $otherPost->id,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 900, 'comments' => 0, 'reposts' => 0,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->has('accounts', 1)
+            ->where('accounts.0.id', $account->id)
+            ->where('summary.followers.value', 7)
+            ->where('summary.engagement.value', 9)
+            ->has('posts', 1)
+            ->where('comparison.top.0.id', $post->id));
 });
 
 test('analytics polling settings are keyed by platform enum values', function (): void {

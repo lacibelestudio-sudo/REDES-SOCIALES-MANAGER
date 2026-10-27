@@ -1,11 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { StatTile } from '@/components/analytics/stat-tile';
 import { disabledPlatformLabels } from '@/lib/platforms';
 
 const source = readFileSync(resolve(import.meta.dirname, 'index.tsx'), 'utf8');
+
+function renderStatTile(value: number | null, caption: string): string {
+    return renderToStaticMarkup(
+        createElement(StatTile, {
+            label: 'Followers',
+            metric: { value, delta: null },
+            caption,
+            deltaLabel: 'vs previous period',
+        }),
+    );
+}
 
 describe('analytics disabled metric notices', () => {
     it('shows partial platform disables where metrics are used', () => {
@@ -72,6 +86,27 @@ describe('analytics headline summary', () => {
         expect(source).toContain('FollowerChart');
         expect(source).toContain('accountMetricsEnabled={');
         expect(source).toContain('posts={posts}');
+    });
+
+    it('renders unavailable measurements as no data', () => {
+        expect(renderStatTile(null, '0 of 2 accounts measured')).toContain(
+            'No data',
+        );
+    });
+
+    it('keeps a valid zero distinct from a missing measurement', () => {
+        expect(renderStatTile(0, '1 of 1 accounts measured')).toContain(
+            '>0</span>',
+        );
+        expect(renderStatTile(0, '1 of 1 accounts measured')).not.toContain(
+            'No data',
+        );
+    });
+
+    it('shows partial measurement coverage in the tile caption', () => {
+        expect(
+            renderStatTile(125, 'measured for 1 of 2 non-Discord accounts'),
+        ).toContain('measured for 1 of 2 non-Discord accounts');
     });
 });
 
