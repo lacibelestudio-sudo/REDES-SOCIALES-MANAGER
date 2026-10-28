@@ -10,10 +10,24 @@ describe('follower chart tooltip', () => {
         const timestamp = new Date('2026-06-22T12:00:00.000Z').getTime();
 
         expect(
-            formatFollowerTooltipDate('Andras Bacsai', [
-                { payload: { date: timestamp } },
-            ]),
+            formatFollowerTooltipDate(
+                'Andras Bacsai',
+                [{ payload: { date: timestamp } }],
+                'UTC',
+            ),
         ).toBe('Jun 22, 2026');
+    });
+
+    it('formats timestamps in the workspace timezone', () => {
+        const timestamp = new Date('2026-06-22T02:00:00.000Z').getTime();
+
+        expect(
+            formatFollowerTooltipDate(
+                'Andras Bacsai',
+                [{ payload: { date: timestamp } }],
+                'America/Los_Angeles',
+            ),
+        ).toBe('Jun 21, 2026');
     });
 });
 

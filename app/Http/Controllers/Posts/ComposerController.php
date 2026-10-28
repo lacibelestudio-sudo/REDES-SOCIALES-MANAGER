@@ -35,6 +35,9 @@ class ComposerController extends Controller
             ->map(fn (ConnectedAccount $account): array => [
                 'id' => $account->id,
                 'platform' => $account->platform->value,
+                'instagram_account_type' => $account->platform === Platform::Instagram
+                    ? $account->instagramAccountType()->value
+                    : null,
                 'handle' => $account->handle,
                 'display_name' => $account->display_name,
                 'avatar_url' => $account->avatar_url,

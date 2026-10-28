@@ -4,6 +4,8 @@ use App\Dto\Publishing\PublishContext;
 use App\Dto\Publishing\PublishResult;
 use App\Enums\ConnectedAccountStatus;
 use App\Enums\ErrorKind;
+use App\Enums\Platform;
+use App\Enums\PostFormat;
 use App\Enums\PostStatus;
 use App\Enums\PostTargetStatus;
 use App\Jobs\PublishPostTarget;
@@ -131,6 +133,37 @@ test('publish fails immediately when the account already needs attention', funct
     $attempt = PostTargetAttempt::where('post_target_id', $target->id)->sole();
     expect($attempt->status)->toBe('failed')
         ->and($attempt->error_kind)->toBe(ErrorKind::AuthExpired);
+
+    Bus::assertNotDispatched(PublishPostTarget::class);
+});
+
+test('Instagram Stories are rejected before credential refresh when Business is not confirmed', function (): void {
+    Bus::fake();
+    $target = publishTarget();
+    $account = $target->account()->firstOrFail();
+    $account->forceFill([
+        'platform' => Platform::Instagram->value,
+        'capabilities' => ['instagram_account_type' => 'unknown'],
+    ])->save();
+    $target->forceFill([
+        'platform' => Platform::Instagram->value,
+        'format' => PostFormat::Story->value,
+    ])->save();
+
+    bindConnector(fn () => throw new RuntimeException('connector should not be called'));
+
+    (new PublishPostTarget($target))->handle(
+        app(PublishConnectorRegistry::class),
+        app(TokenManager::class),
+        app(PostStatusRollup::class),
+        app(BackoffSchedule::class),
+    );
+
+    $target->refresh();
+
+    expect($target->status)->toBe(PostTargetStatus::Failed)
+        ->and($target->error_kind)->toBe(ErrorKind::Validation)
+        ->and($target->error_message)->toContain('account type is unknown');
 
     Bus::assertNotDispatched(PublishPostTarget::class);
 });

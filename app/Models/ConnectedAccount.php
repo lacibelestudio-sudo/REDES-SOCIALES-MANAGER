@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Concerns\HasWorkspaceScope;
 use App\Enums\ConnectedAccountStatus;
+use App\Enums\InstagramAccountType;
 use App\Enums\MetricsStatus;
 use App\Enums\Platform;
 use Carbon\CarbonImmutable;
@@ -238,6 +239,31 @@ class ConnectedAccount extends Model
     {
         return $this->platform === Platform::LinkedIn
             && ($this->capabilities['linkedin_account_type'] ?? 'person') === 'organization';
+    }
+
+    public function instagramAccountType(): InstagramAccountType
+    {
+        if ($this->platform !== Platform::Instagram) {
+            return InstagramAccountType::Unknown;
+        }
+
+        return InstagramAccountType::tryFrom(
+            (string) ($this->capabilities['instagram_account_type'] ?? InstagramAccountType::Unknown->value),
+        ) ?? InstagramAccountType::Unknown;
+    }
+
+    public function supportsInstagramStories(): bool
+    {
+        return $this->instagramAccountType() === InstagramAccountType::Business;
+    }
+
+    public function instagramStoryRestrictionMessage(): ?string
+    {
+        return match ($this->instagramAccountType()) {
+            InstagramAccountType::Business => null,
+            InstagramAccountType::Creator => 'Instagram Stories can only be published from a Business account. This account is a Creator account; existing posts have not been changed.',
+            InstagramAccountType::Unknown => 'Instagram Stories are unavailable because the provider-confirmed account type is unknown. Existing posts have not been changed.',
+        };
     }
 
     /**

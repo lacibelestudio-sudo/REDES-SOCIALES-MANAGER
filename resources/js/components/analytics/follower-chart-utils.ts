@@ -1,5 +1,3 @@
-import { dayjs } from '@/lib/datetime/dayjs';
-
 // Distinct categorical hues (not a warm monochrome ramp) so each account line
 // stays tellable-apart. Assigned in fixed order and validated colorblind-safe.
 const ACCOUNT_COLORS = [
@@ -51,6 +49,7 @@ export function followerYDomain(values: number[]): [number, number] {
 export function formatFollowerTooltipDate(
     _label: unknown,
     payload?: TooltipPayloadWithDate,
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 ): string {
     const date = payload?.[0]?.payload?.date;
 
@@ -58,7 +57,24 @@ export function formatFollowerTooltipDate(
         return '';
     }
 
-    const formattedDate = dayjs(date);
+    return formatAnalyticsDate(date, timezone, true);
+}
 
-    return formattedDate.isValid() ? formattedDate.format('MMM D, YYYY') : '';
+export function formatAnalyticsDate(
+    value: Date | number | string,
+    timezone: string,
+    includeYear = false,
+): string {
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        ...(includeYear ? { year: 'numeric' as const } : {}),
+        timeZone: timezone,
+    }).format(date);
 }

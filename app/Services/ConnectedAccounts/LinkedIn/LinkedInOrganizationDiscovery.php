@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\ConnectedAccounts\LinkedIn;
 
 use App\Dto\ConnectedAccount\LinkedInOrganization;
+use App\Dto\ConnectedAccount\LinkedInOrganizationDiscoveryResult;
+use App\Enums\LinkedInOrganizationDiscoveryStatus;
 use App\Services\Publishing\Connectors\LinkedInConnector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -12,9 +14,9 @@ use Illuminate\Http\Client\Factory as HttpFactory;
 /**
  * Discovers the LinkedIn Organizations (Pages) a member administers, so the
  * connect flow can offer them as connectable accounts. Uses the Community
- * Management ACL finder + Organization batch lookup. Never throws — any
- * permission/network failure yields an empty list so the connect flow degrades
- * to personal-profile-only rather than erroring.
+ * Management ACL finder + Organization batch lookup. Failures are typed so
+ * the caller can distinguish an empty successful result from an incomplete
+ * discovery without exposing provider response details.
  */
 class LinkedInOrganizationDiscovery
 {
@@ -27,22 +29,23 @@ class LinkedInOrganizationDiscovery
 
     public function __construct(private readonly HttpFactory $http) {}
 
-    /**
-     * @return list<LinkedInOrganization>
-     */
-    public function administeredOrganizations(string $accessToken): array
+    public function discover(string $accessToken): LinkedInOrganizationDiscoveryResult
     {
-        $urns = $this->adminOrganizationUrns($accessToken);
+        $urnResult = $this->adminOrganizationUrns($accessToken);
 
-        if ($urns === []) {
-            return [];
+        if ($urnResult['status'] !== LinkedInOrganizationDiscoveryStatus::Succeeded) {
+            return new LinkedInOrganizationDiscoveryResult($urnResult['status']);
         }
 
-        return $this->resolveOrganizations($accessToken, $urns);
+        if ($urnResult['urns'] === []) {
+            return new LinkedInOrganizationDiscoveryResult(LinkedInOrganizationDiscoveryStatus::Succeeded);
+        }
+
+        return $this->resolveOrganizations($accessToken, $urnResult['urns']);
     }
 
     /**
-     * @return list<string> organization URNs the member administers (APPROVED)
+     * @return array{status: LinkedInOrganizationDiscoveryStatus, urns: list<string>}
      */
     private function adminOrganizationUrns(string $accessToken): array
     {
@@ -66,16 +69,24 @@ class LinkedInOrganizationDiscovery
                         'start' => $start,
                     ]);
             } catch (ConnectionException) {
-                return [];
+                return ['status' => LinkedInOrganizationDiscoveryStatus::ConnectionFailed, 'urns' => []];
             }
 
             if ($response->failed()) {
-                return $urns;
+                return ['status' => $this->statusForHttpCode($response->status()), 'urns' => []];
             }
 
-            $elements = (array) $response->json('elements', []);
+            $elements = $response->json('elements');
+
+            if (! is_array($elements)) {
+                return ['status' => LinkedInOrganizationDiscoveryStatus::ProviderFailed, 'urns' => []];
+            }
 
             foreach ($elements as $element) {
+                if (! is_array($element)) {
+                    return ['status' => LinkedInOrganizationDiscoveryStatus::ProviderFailed, 'urns' => []];
+                }
+
                 // Paginated responses use `organizationTarget`; non-paginated use `organization`.
                 $urn = (string) ($element['organizationTarget'] ?? $element['organization'] ?? '');
 
@@ -87,19 +98,26 @@ class LinkedInOrganizationDiscovery
             $start += count($elements);
             // Hard page cap: this runs synchronously inside the OAuth callback, so
             // a misbehaving `next`-forever response must never spin indefinitely.
-            $hasNext = ++$page < self::MAX_PAGES
-                && $elements !== []
-                && $this->hasNextPage($response->json('paging.links', []));
+            $hasNextLink = $elements !== [] && $this->hasNextPage($response->json('paging.links', []));
+            $page++;
+
+            if ($page === self::MAX_PAGES && $hasNextLink) {
+                return ['status' => LinkedInOrganizationDiscoveryStatus::ProviderFailed, 'urns' => []];
+            }
+
+            $hasNext = $hasNextLink;
         } while ($hasNext);
 
-        return array_values(array_unique($urns));
+        return [
+            'status' => LinkedInOrganizationDiscoveryStatus::Succeeded,
+            'urns' => array_values(array_unique($urns)),
+        ];
     }
 
     /**
      * @param  list<string>  $urns
-     * @return list<LinkedInOrganization>
      */
-    private function resolveOrganizations(string $accessToken, array $urns): array
+    private function resolveOrganizations(string $accessToken, array $urns): LinkedInOrganizationDiscoveryResult
     {
         $ids = array_map(fn (string $urn): string => $this->urnId($urn), $urns);
 
@@ -112,11 +130,11 @@ class LinkedInOrganizationDiscovery
                 ->acceptJson()
                 ->get(self::ORGANIZATIONS_URL, ['ids' => 'List('.implode(',', $ids).')']);
         } catch (ConnectionException) {
-            return [];
+            return new LinkedInOrganizationDiscoveryResult(LinkedInOrganizationDiscoveryStatus::ConnectionFailed);
         }
 
         if ($response->failed()) {
-            return [];
+            return new LinkedInOrganizationDiscoveryResult($this->statusForHttpCode($response->status()));
         }
 
         $results = (array) $response->json('results', []);
@@ -124,8 +142,14 @@ class LinkedInOrganizationDiscovery
         $organizations = [];
 
         foreach ($ids as $id) {
-            if (($statuses[$id] ?? 200) !== 200 || ! isset($results[$id])) {
-                continue;
+            $status = (int) ($statuses[$id] ?? 200);
+
+            if ($status !== 200) {
+                return new LinkedInOrganizationDiscoveryResult($this->statusForHttpCode($status));
+            }
+
+            if (! isset($results[$id]) || ! is_array($results[$id])) {
+                return new LinkedInOrganizationDiscoveryResult(LinkedInOrganizationDiscoveryStatus::ProviderFailed);
             }
 
             $result = (array) $results[$id];
@@ -137,7 +161,20 @@ class LinkedInOrganizationDiscovery
             );
         }
 
-        return $organizations;
+        return new LinkedInOrganizationDiscoveryResult(
+            LinkedInOrganizationDiscoveryStatus::Succeeded,
+            $organizations,
+        );
+    }
+
+    private function statusForHttpCode(int $status): LinkedInOrganizationDiscoveryStatus
+    {
+        return match ($status) {
+            401 => LinkedInOrganizationDiscoveryStatus::AuthenticationFailed,
+            403 => LinkedInOrganizationDiscoveryStatus::PermissionDenied,
+            429 => LinkedInOrganizationDiscoveryStatus::RateLimited,
+            default => LinkedInOrganizationDiscoveryStatus::ProviderFailed,
+        };
     }
 
     private function hasNextPage(mixed $links): bool

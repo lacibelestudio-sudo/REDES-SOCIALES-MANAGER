@@ -48,6 +48,9 @@ export type AnalyticsPostMarker = {
     title: string;
     published_at: string;
     platforms: PlatformName[];
+    engagement: number | null;
+    measured_targets: number;
+    total_targets: number;
 };
 
 export type AnalyticsComparisonRow = AnalyticsPostMarker & {
@@ -71,7 +74,7 @@ export type AnalyticsMetricCoverage = {
 export type AnalyticsSummary = {
     followers: AnalyticsSummaryMetric & { coverage: AnalyticsMetricCoverage };
     engagement: AnalyticsSummaryMetric & { coverage: AnalyticsMetricCoverage };
-    posts: AnalyticsSummaryMetric;
+    posts: { value: number; delta: number | null };
     /** How many accounts contribute to the follower total. */
     account_count: number;
 };
@@ -79,14 +82,37 @@ export type AnalyticsSummary = {
 export type AnalyticsPageProps = {
     accounts: AnalyticsAccount[];
     posts: AnalyticsPostMarker[];
+    ranking: AnalyticsComparisonRow[];
     summary: AnalyticsSummary;
     comparison: {
         top: AnalyticsComparisonRow[];
         bottom: AnalyticsComparisonRow[];
     };
+    filters: {
+        days: number;
+        platform: PlatformName | null;
+        account_id: string | null;
+        from: string;
+        to: string;
+        from_at: string;
+        to_at: string;
+        timezone: string;
+    };
+    workspace: { name: string };
+    generatedAt: string;
+    reportUrls: { print: string; csv: string };
+    definitions: string[];
+    filterOptions: {
+        platforms: { value: PlatformName; label: string }[];
+        accounts: {
+            id: string;
+            platform: PlatformName;
+            handle: string;
+            display_name: string | null;
+        }[];
+    };
     polling: {
         post_metrics_enabled: Record<PlatformName, boolean>;
         account_metrics_enabled: Record<PlatformName, boolean>;
     };
-    rangeDays: number;
 };

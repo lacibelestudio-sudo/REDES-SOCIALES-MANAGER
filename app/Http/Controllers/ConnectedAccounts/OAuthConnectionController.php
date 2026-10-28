@@ -141,11 +141,7 @@ class OAuthConnectionController extends Controller
         }
 
         if ($resolved === Platform::LinkedIn && $this->settings->linkedinCommunityManagementEnabled()) {
-            $picker = $this->renderLinkedInPagePicker($request, $data, $linkedInGrantedScopes);
-
-            if ($picker !== null) {
-                return $picker;
-            }
+            return $this->renderLinkedInPagePicker($request, $data, $linkedInGrantedScopes);
         }
 
         $this->connections->store($data, $request->user());
@@ -156,18 +152,20 @@ class OAuthConnectionController extends Controller
 
     /**
      * When the operator has opted into Community Management, offer the member's
-     * administered Pages alongside their personal profile. Returns the picker
-     * response, or null when the member administers no Pages (then the caller
-     * falls through to the normal single personal-account store).
+     * administered Pages alongside their personal profile. A failed discovery
+     * still renders the picker so the member can connect the profile.
      *
      * @param  list<string>  $grantedScopes
      */
-    private function renderLinkedInPagePicker(Request $request, ConnectedAccountData $data, array $grantedScopes): ?InertiaResponse
+    private function renderLinkedInPagePicker(Request $request, ConnectedAccountData $data, array $grantedScopes): InertiaResponse
     {
-        $organizations = $this->linkedInOrganizations->administeredOrganizations((string) $data->accessToken);
+        $discovery = $this->linkedInOrganizations->discover((string) $data->accessToken);
+        $organizations = $discovery->organizations;
 
-        if ($organizations === []) {
-            return null;
+        if (! $discovery->succeeded()) {
+            Log::warning('LinkedIn organization discovery did not complete.', [
+                'status' => $discovery->status->value,
+            ]);
         }
 
         $stashedOrganizations = [];
@@ -194,11 +192,14 @@ class OAuthConnectionController extends Controller
             'refreshToken' => $data->refreshToken,
             'tokenExpiresAt' => $data->tokenExpiresAt?->toIso8601String(),
             'approvedScopes' => $grantedScopes,
+            'organizationDiscoveryStatus' => $discovery->status->value,
         ]);
 
         return Inertia::render('accounts/connect-linkedin', [
             'person' => $person,
             'organizations' => array_values($stashedOrganizations),
+            'organizationDiscoveryStatus' => $discovery->status->value,
+            'organizationDiscoveryMessage' => $discovery->status->userMessage(),
         ]);
     }
 

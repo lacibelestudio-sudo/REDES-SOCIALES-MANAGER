@@ -33,6 +33,7 @@ import type { GifItem } from '@/types/gifs';
 type Props = {
     /** Active account's platform; undefined on the generic "Post" tab. */
     activePlatform?: PlatformName;
+    instagramAccountType?: 'business' | 'creator' | 'unknown' | null;
     autoSplit: boolean;
     /** Per-account post format; only meaningful for Instagram & Facebook. */
     format?: PostFormat;
@@ -79,6 +80,7 @@ type Props = {
 
 export function ComposerToolbar({
     activePlatform,
+    instagramAccountType,
     autoSplit,
     format = 'feed',
     onFormatChange,
@@ -120,6 +122,8 @@ export function ComposerToolbar({
         { value: 'reels', label: 'Reels' },
         { value: 'story', label: 'Stories' },
     ];
+    const instagramStoriesAvailable =
+        activePlatform !== 'instagram' || instagramAccountType === 'business';
     // Count confirmed media plus uploads still in flight so the badge bumps the
     // instant a file is picked, and settles back if an upload fails. "processing"
     // (client-side compression) is in flight too, so it counts.
@@ -234,12 +238,21 @@ export function ComposerToolbar({
                         <button
                             key={option.value}
                             type="button"
-                            title={`Post as ${option.label}`}
+                            title={
+                                option.value === 'story' &&
+                                !instagramStoriesAvailable
+                                    ? 'Stories require a provider-confirmed Instagram Business account type.'
+                                    : `Post as ${option.label}`
+                            }
+                            disabled={
+                                option.value === 'story' &&
+                                !instagramStoriesAvailable
+                            }
                             data-active={format === option.value}
                             onClick={() => onFormatChange?.(option.value)}
                             className={cn(
                                 'inline-flex h-7 items-center rounded-[5px] px-2.5 text-[12px] text-muted-foreground transition-colors sm:h-6',
-                                'hover:text-foreground',
+                                'hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground',
                                 'data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:shadow-[0_1px_2px_0_rgb(0_0_0/0.04)]',
                             )}
                         >
@@ -248,6 +261,32 @@ export function ComposerToolbar({
                     ))}
                 </div>
             )}
+
+            {activePlatform === 'instagram' &&
+                format === 'story' &&
+                !instagramStoriesAvailable && (
+                    <p
+                        role="alert"
+                        className="basis-full text-xs text-amber-800 dark:text-amber-200"
+                    >
+                        This saved Story is unchanged, but cannot be published
+                        until Instagram Business is confirmed. Choose Feed or
+                        Reels to continue.
+                    </p>
+                )}
+
+            {activePlatform === 'instagram' &&
+                format === 'story' &&
+                !instagramStoriesAvailable && (
+                    <p
+                        role="status"
+                        className="w-full text-xs text-amber-700 dark:text-amber-500"
+                    >
+                        Instagram Stories require a provider-confirmed Business
+                        account type. This saved format has not been changed;
+                        choose Feed or Reels to continue.
+                    </p>
+                )}
 
             {showSplitControls && !readOnly && (
                 <>

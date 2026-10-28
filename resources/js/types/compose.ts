@@ -47,6 +47,7 @@ export type AccountStatus = 'active' | 'needs_attention';
 export type Account = {
     id: string;
     platform: PlatformName;
+    instagram_account_type?: 'business' | 'creator' | 'unknown' | null;
     handle: string;
     display_name: string | null;
     avatar_url: string | null;

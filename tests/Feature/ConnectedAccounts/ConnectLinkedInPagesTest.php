@@ -38,15 +38,61 @@ test('linkedin callback renders the page picker when organizations are administe
     ]);
 
     test()->get('/accounts/callback/linkedin?code=abc&state=xyz')
-        // The `accounts/connect-linkedin` picker page is a later task; skip
-        // Inertia's page-file existence check (mirrors ConnectMetaTest).
+        ->assertInertia(fn ($page) => $page
+            ->component('accounts/connect-linkedin')
+            ->where('person.remoteAccountId', 'PERSON1')
+            ->has('organizations', 1)
+            ->where('organizations.0.name', 'Acme Inc')
+            ->where('organizationDiscoveryStatus', 'succeeded'));
+
+    expect(ConnectedAccount::count())->toBe(0); // nothing persisted until the user picks
+});
+
+test('linkedin callback keeps the personal profile available when discovery succeeds with no pages', function () {
+    ownerActingIn();
+    app(InstanceSettings::class)->update(['linkedin_community_management_enabled' => true]);
+    fakeOAuthUser('linkedin-openid', [
+        'id' => 'PERSON1',
+        'name' => 'Jane Member',
+        'nickname' => 'jane',
+        'approvedScopes' => ['w_member_social', 'rw_organization_admin'],
+    ]);
+    Http::fake(['https://api.linkedin.com/rest/organizationAcls*' => Http::response(['elements' => []])]);
+
+    test()->get('/accounts/callback/linkedin?code=abc&state=xyz')
         ->assertInertia(fn ($page) => $page
             ->component('accounts/connect-linkedin', false)
             ->where('person.remoteAccountId', 'PERSON1')
-            ->has('organizations', 1)
-            ->where('organizations.0.name', 'Acme Inc'));
+            ->where('organizationDiscoveryStatus', 'succeeded')
+            ->where('organizationDiscoveryMessage', null)
+            ->has('organizations', 0));
 
-    expect(ConnectedAccount::count())->toBe(0); // nothing persisted until the user picks
+    expect(ConnectedAccount::count())->toBe(0);
+});
+
+test('linkedin callback keeps the personal profile available and reports failed page discovery safely', function () {
+    ownerActingIn();
+    app(InstanceSettings::class)->update(['linkedin_community_management_enabled' => true]);
+    fakeOAuthUser('linkedin-openid', [
+        'id' => 'PERSON1',
+        'name' => 'Jane Member',
+        'nickname' => 'jane',
+        'approvedScopes' => ['w_member_social', 'rw_organization_admin'],
+    ]);
+    Http::fake(['https://api.linkedin.com/rest/organizationAcls*' => Http::response(['message' => 'sensitive provider detail'], 403)]);
+
+    test()->get('/accounts/callback/linkedin?code=abc&state=xyz')
+        ->assertInertia(fn ($page) => $page
+            ->component('accounts/connect-linkedin', false)
+            ->where('person.remoteAccountId', 'PERSON1')
+            ->where('organizationDiscoveryStatus', 'permission_denied')
+            ->where(
+                'organizationDiscoveryMessage',
+                'LinkedIn denied access to organization Pages. You can still connect your personal profile; approved Community Management permissions are needed to discover Pages.',
+            )
+            ->has('organizations', 0));
+
+    expect(ConnectedAccount::count())->toBe(0);
 });
 
 test('linkedin callback stays single-step when the toggle is off', function () {

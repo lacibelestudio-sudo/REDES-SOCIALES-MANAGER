@@ -14,17 +14,23 @@ use Illuminate\Support\Facades\Storage;
 /**
  * @param  list<PostMedia>  $media
  * @param  array<string, mixed>  $targetOverrides
+ * @param  array<string, mixed>  $accountOverrides
  */
-function igFormatContext(array $segments, array $media, PostFormat $format, array $targetOverrides = []): PublishContext
-{
+function igFormatContext(
+    array $segments,
+    array $media,
+    PostFormat $format,
+    array $targetOverrides = [],
+    array $accountOverrides = [],
+): PublishContext {
     $target = PostTarget::factory()->create(array_merge([
         'platform' => Platform::Instagram->value,
         'format' => $format->value,
     ], $targetOverrides));
-    $account = ConnectedAccount::factory()->create([
+    $account = ConnectedAccount::factory()->create(array_merge([
         'platform' => Platform::Instagram->value,
         'remote_account_id' => 'ig123',
-    ]);
+    ], $accountOverrides));
 
     return new PublishContext(
         target: $target,
@@ -47,7 +53,12 @@ test('a story container sends media_type STORIES and no caption', function () {
         'https://graph.facebook.com/*/ig123/media_publish' => Http::response(['id' => 'ig-1']),
     ]);
 
-    $result = app(InstagramConnector::class)->publish(igFormatContext(['hello story'], [$media], PostFormat::Story));
+    $result = app(InstagramConnector::class)->publish(igFormatContext(
+        ['hello story'],
+        [$media],
+        PostFormat::Story,
+        accountOverrides: ['capabilities' => ['instagram_account_type' => 'business']],
+    ));
 
     expect($result->isSuccessful())->toBeTrue();
 
@@ -62,6 +73,25 @@ test('a story container sends media_type STORIES and no caption', function () {
             && ! array_key_exists('caption', $data)
             && array_key_exists('image_url', $data);
     });
+
+    test('a story is rejected by the connector unless Business is confirmed', function (string $accountType): void {
+        Http::fake();
+
+        $result = app(InstagramConnector::class)->publish(igFormatContext(
+            ['hello story'],
+            [],
+            PostFormat::Story,
+            accountOverrides: ['capabilities' => ['instagram_account_type' => $accountType]],
+        ));
+
+        expect($result->isSuccessful())->toBeFalse()
+            ->and($result->errorKind)->toBe(ErrorKind::Validation);
+
+        Http::assertNothingSent();
+    })->with([
+        'Creator' => 'creator',
+        'unknown' => 'unknown',
+    ]);
 });
 
 test('a reels container keeps the caption and sends media_type REELS', function () {

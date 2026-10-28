@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\ConnectedAccounts;
 
 use App\Dto\ConnectedAccount\ConnectedAccountData;
+use App\Enums\InstagramAccountType;
 use App\Enums\Platform;
 use App\Http\Controllers\Controller;
 use App\Models\ConnectedAccount;
@@ -171,6 +172,7 @@ class MetaConnectionController extends Controller
                 'igUserId' => $asset->igUserId,
                 'igUsername' => $asset->igUsername,
                 'igAvatarUrl' => $asset->igAvatarUrl,
+                'igAccountType' => $asset->igAccountType->value,
             ];
         }
 
@@ -188,7 +190,7 @@ class MetaConnectionController extends Controller
         $request->user()->can('create', ConnectedAccount::class) ?: abort(403);
 
         $stash = $request->session()->get(self::SESSION_KEY);
-        /** @var array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string}> $stashedAssets */
+        /** @var array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string, igAccountType?: string}> $stashedAssets */
         $stashedAssets = is_array($stash) ? ($stash['assets'] ?? []) : [];
 
         $launchedPlatforms = array_map(
@@ -219,7 +221,29 @@ class MetaConnectionController extends Controller
                 ]);
             }
 
-            $this->connections->store(self::buildAccountData($asset, $platform), $request->user());
+            $data = self::buildAccountData($asset, $platform);
+
+            if (
+                $platform === Platform::Instagram
+                && ($data->capabilities['instagram_account_type'] ?? InstagramAccountType::Unknown->value) === InstagramAccountType::Unknown->value
+            ) {
+                $existing = ConnectedAccount::withoutGlobalScopes()
+                    ->where('workspace_id', $request->user()->current_workspace_id)
+                    ->where('platform', Platform::Instagram->value)
+                    ->where('remote_account_id', $data->remoteAccountId)
+                    ->first();
+
+                $existingType = $existing?->instagramAccountType();
+
+                if ($existingType !== null && $existingType !== InstagramAccountType::Unknown) {
+                    $data = $data->withCapabilities([
+                        ...(array) $data->capabilities,
+                        'instagram_account_type' => $existingType->value,
+                    ]);
+                }
+            }
+
+            $this->connections->store($data, $request->user());
             $created++;
         }
 
@@ -238,7 +262,7 @@ class MetaConnectionController extends Controller
      * (launchedMetaGraphPlatforms() is empty — and the whole flow inert — until
      * Facebook launches).
      *
-     * @param  array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string}  $stashedAsset
+     * @param  array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string, igAccountType?: string}  $stashedAsset
      */
     public static function buildAccountData(array $stashedAsset, Platform $platform): ConnectedAccountData
     {
@@ -262,7 +286,11 @@ class MetaConnectionController extends Controller
                 // IG publishing/comments/insights all authenticate with the
                 // linked Page's token — the IG user id is just the target node.
                 accessToken: $stashedAsset['pageAccessToken'],
-                capabilities: ['page_id' => $stashedAsset['pageId'], 'dm_enabled' => $dmEnabled],
+                capabilities: [
+                    'page_id' => $stashedAsset['pageId'],
+                    'dm_enabled' => $dmEnabled,
+                    'instagram_account_type' => $stashedAsset['igAccountType'] ?? 'unknown',
+                ],
             );
         }
 
@@ -320,7 +348,7 @@ class MetaConnectionController extends Controller
     }
 
     /**
-     * @param  array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string}>  $stashedAssets
+     * @param  array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string, igAccountType?: string}>  $stashedAssets
      * @return list<array{key: string, pageId: string, pageName: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string, platforms: list<string>}>
      */
     private function projectAssets(array $stashedAssets): array
@@ -335,6 +363,7 @@ class MetaConnectionController extends Controller
                 'igUserId' => $asset['igUserId'],
                 'igUsername' => $asset['igUsername'],
                 'igAvatarUrl' => $asset['igAvatarUrl'],
+                'igAccountType' => $asset['igAccountType'] ?? 'unknown',
                 'platforms' => $this->availablePlatformsFor($asset),
             ];
         }
@@ -396,7 +425,7 @@ class MetaConnectionController extends Controller
 
     private function renderAssetPicker(Request $request): InertiaResponse
     {
-        /** @var array{assets: array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string}>} $stash */
+        /** @var array{assets: array<string, array{pageId: string, pageName: string, pageAccessToken: string, igUserId: ?string, igUsername: ?string, igAvatarUrl: ?string, igAccountType?: string}>} $stash */
         $stash = $request->session()->get(self::SESSION_KEY);
 
         return Inertia::render('accounts/connect-meta', [

@@ -51,6 +51,8 @@ Route::bind('share', fn (string $value): PostShare => PostShare::query()->whereK
 
 Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('metrics.enabled')->name('analytics.index');
+    Route::get('analytics/print', [AnalyticsController::class, 'print'])->middleware('metrics.enabled')->name('analytics.print');
+    Route::get('analytics/export.csv', [AnalyticsController::class, 'exportCsv'])->middleware('metrics.enabled')->name('analytics.export.csv');
 
     Route::get('calendar', [CalendarController::class, 'redirectToCurrent'])->name('calendar.index');
     Route::get('calendar/{yyyymm}', [CalendarController::class, 'show'])

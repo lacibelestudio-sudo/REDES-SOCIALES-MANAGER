@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ConnectedAccounts\Meta;
 
 use App\Dto\ConnectedAccount\MetaAsset;
+use App\Enums\InstagramAccountType;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Date;
@@ -78,7 +79,7 @@ class MetaAssetEnumerator
      */
     private function toAsset(array $page): MetaAsset
     {
-        /** @var array{id?: string, username?: string, profile_picture_url?: string}|null $instagram */
+        /** @var array{id?: string, username?: string, profile_picture_url?: string, account_type?: mixed}|null $instagram */
         $instagram = $page['instagram_business_account'] ?? null;
 
         return new MetaAsset(
@@ -88,6 +89,7 @@ class MetaAssetEnumerator
             igUserId: $instagram['id'] ?? null,
             igUsername: $instagram['username'] ?? null,
             igAvatarUrl: $instagram['profile_picture_url'] ?? null,
+            igAccountType: InstagramAccountType::fromProvider($instagram['account_type'] ?? null),
         );
     }
 

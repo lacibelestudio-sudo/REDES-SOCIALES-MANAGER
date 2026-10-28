@@ -10,6 +10,7 @@ import {
 
 import {
     accountChartColor,
+    formatAnalyticsDate,
     followerYDomain,
     formatFollowerTooltipDate,
 } from '@/components/analytics/follower-chart-utils';
@@ -21,7 +22,6 @@ import {
     ChartTooltipContent,
     type ChartConfig,
 } from '@/components/ui/chart';
-import { dayjs } from '@/lib/datetime/dayjs';
 import { show as postRoute } from '@/routes/posts';
 import type {
     AnalyticsAccount,
@@ -38,6 +38,7 @@ export {
 type FollowerChartProps = {
     accounts: AnalyticsPageProps['accounts'];
     posts: AnalyticsPageProps['posts'];
+    timezone: string;
     /** Per-platform account-metric polling switches. */
     accountMetricsEnabled: Record<string, boolean>;
 };
@@ -48,7 +49,7 @@ function seriesPoints(account: AnalyticsAccount): TrendPoint[] {
     return account.series
         .filter((point) => point.followers != null)
         .map((point) => ({
-            date: dayjs(point.at).valueOf(),
+            date: new Date(point.at).getTime(),
             value: point.followers,
         }));
 }
@@ -63,6 +64,7 @@ function seriesPoints(account: AnalyticsAccount): TrendPoint[] {
 export default function FollowerChart({
     accounts,
     posts,
+    timezone,
     accountMetricsEnabled,
 }: FollowerChartProps) {
     // A shared time window across every panel keeps them comparable left-to-right.
@@ -93,6 +95,7 @@ export default function FollowerChart({
                     posts={posts.filter((post) =>
                         post.platforms.includes(account.platform),
                     )}
+                    timezone={timezone}
                     xDomain={xDomain}
                 />
             ))}
@@ -105,6 +108,7 @@ type AccountTrendCardProps = {
     color: string;
     metricsEnabled: boolean;
     posts: AnalyticsPostMarker[];
+    timezone: string;
     xDomain: [number, number] | undefined;
 };
 
@@ -113,6 +117,7 @@ function AccountTrendCard({
     color,
     metricsEnabled,
     posts,
+    timezone,
     xDomain,
 }: AccountTrendCardProps) {
     const label = account.display_name ?? account.handle;
@@ -217,8 +222,12 @@ function AccountTrendCard({
                             <ChartTooltip
                                 content={
                                     <ChartTooltipContent
-                                        labelFormatter={
-                                            formatFollowerTooltipDate
+                                        labelFormatter={(label, payload) =>
+                                            formatFollowerTooltipDate(
+                                                label,
+                                                payload,
+                                                timezone,
+                                            )
                                         }
                                         indicator="dot"
                                     />
@@ -240,6 +249,7 @@ function AccountTrendCard({
                                             x={props.viewBox?.x ?? 0}
                                             y={props.viewBox?.y ?? 0}
                                             post={post}
+                                            timezone={timezone}
                                         />
                                     )}
                                 />
@@ -265,7 +275,7 @@ function AccountTrendCard({
                     </ChartContainer>
                     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span className="tabular-nums">
-                            {dayjs(points[0].date).format('MMM D')}
+                            {formatAnalyticsDate(points[0].date, timezone)}
                         </span>
                         {markers.length > 0 && (
                             <span className="flex items-center gap-1.5">
@@ -278,8 +288,9 @@ function AccountTrendCard({
                             </span>
                         )}
                         <span className="tabular-nums">
-                            {dayjs(points[points.length - 1].date).format(
-                                'MMM D',
+                            {formatAnalyticsDate(
+                                points[points.length - 1].date,
+                                timezone,
                             )}
                         </span>
                     </div>
@@ -293,9 +304,10 @@ type PostMarkerProps = {
     x: number;
     y: number;
     post: AnalyticsPostMarker;
+    timezone: string;
 };
 
-function PostMarker({ x, y, post }: PostMarkerProps) {
+function PostMarker({ x, y, post, timezone }: PostMarkerProps) {
     return (
         <g
             transform={`translate(${x}, ${y})`}
@@ -303,7 +315,7 @@ function PostMarker({ x, y, post }: PostMarkerProps) {
             onClick={() => router.visit(postRoute(post.id).url)}
         >
             <title>
-                {`${post.title || 'Untitled post'} · ${dayjs(post.published_at).format('MMM D')}`}
+                {`${post.title || 'Untitled post'} · ${formatAnalyticsDate(post.published_at, timezone)}`}
             </title>
             {/* Larger transparent hit target for easy hover/click. */}
             <circle r={7} fill="transparent" />

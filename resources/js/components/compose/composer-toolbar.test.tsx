@@ -19,21 +19,54 @@ const base = {
 };
 
 describe('ComposerToolbar format picker', () => {
-    it('shows the format picker for instagram accounts', () => {
+    it('enables Stories only for provider-confirmed Business accounts', () => {
         render(
             <ComposerToolbar
                 {...base}
                 activePlatform="instagram"
+                instagramAccountType="business"
                 format="feed"
                 onFormatChange={vi.fn()}
             />,
         );
-        expect(
-            screen.getByRole('button', { name: /stories/i }),
-        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /stories/i })).toBeEnabled();
         expect(
             screen.getByRole('button', { name: /reels/i }),
         ).toBeInTheDocument();
+    });
+
+    it.each(['creator', 'unknown', undefined] as const)(
+        'disables Stories for account type %s',
+        (instagramAccountType) => {
+            render(
+                <ComposerToolbar
+                    {...base}
+                    activePlatform="instagram"
+                    instagramAccountType={instagramAccountType}
+                    format="feed"
+                    onFormatChange={vi.fn()}
+                />,
+            );
+            expect(
+                screen.getByRole('button', { name: /stories/i }),
+            ).toBeDisabled();
+        },
+    );
+
+    it('explains why an existing Story cannot be published for an unknown account', () => {
+        render(
+            <ComposerToolbar
+                {...base}
+                activePlatform="instagram"
+                instagramAccountType="unknown"
+                format="story"
+                onFormatChange={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            'This saved Story is unchanged',
+        );
     });
 
     it('hides the format picker for non-meta accounts', () => {

@@ -15,6 +15,28 @@ use App\Support\InstanceSettings;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Date;
 
+function createAnalyticsTarget(Post $post, array $attributes): PostTarget
+{
+    $accountId = $attributes['connected_account_id'] ?? ConnectedAccount::withoutGlobalScopes()
+        ->where('workspace_id', $post->workspace_id)
+        ->where('platform', $attributes['platform'] ?? Platform::X->value)
+        ->whereNotIn('id', PostTarget::query()->where('post_id', $post->id)->select('connected_account_id'))
+        ->value('id');
+
+    if ($accountId === null) {
+        $accountId = ConnectedAccount::factory()
+            ->for(Workspace::query()->findOrFail($post->workspace_id))
+            ->create(['platform' => $attributes['platform'] ?? Platform::X->value])
+            ->id;
+    }
+
+    return PostTarget::factory()->create([
+        ...$attributes,
+        'post_id' => $post->id,
+        'connected_account_id' => $accountId,
+    ]);
+}
+
 beforeEach(function (): void {
     $this->workspace = Workspace::factory()->create();
     $this->user = User::factory()->create(['current_workspace_id' => $this->workspace->id]);
@@ -111,7 +133,7 @@ test('valid zero follower and engagement measurements remain zero', function ():
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($post, [
         'post_id' => $post->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 0,
@@ -158,7 +180,7 @@ test('the engagement summary compares against the previous window', function ():
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDays(15),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($previous, [
         'post_id' => $previous->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 40, 'comments' => 0, 'reposts' => 0,
@@ -171,7 +193,7 @@ test('the engagement summary compares against the previous window', function ():
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($current, [
         'post_id' => $current->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 70, 'comments' => 20, 'reposts' => 10,
@@ -194,7 +216,7 @@ test('engagement has no baseline when the previous window has no posts', functio
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($post, [
         'post_id' => $post->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 50, 'comments' => 0, 'reposts' => 0,
@@ -219,7 +241,7 @@ test('engagement delta is null when the previous window has posts but no capture
         'published_at' => Date::now()->subDays(15),
     ]);
     foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
-        PostTarget::factory()->create([
+        createAnalyticsTarget($previous, [
             'post_id' => $previous->id,
             'metrics_status' => $status->value,
             'likes' => 500, 'comments' => 200, 'reposts' => 100,
@@ -232,7 +254,7 @@ test('engagement delta is null when the previous window has posts but no capture
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($current, [
         'post_id' => $current->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 50, 'comments' => 0, 'reposts' => 0,
@@ -256,13 +278,13 @@ test('summary and ranking include only successfully measured destinations', func
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDays(15),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($previous, [
         'post_id' => $previous->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 4, 'comments' => 0, 'reposts' => 0,
     ]);
     foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
-        PostTarget::factory()->create([
+        createAnalyticsTarget($previous, [
             'post_id' => $previous->id,
             'metrics_status' => $status->value,
             'likes' => 500, 'comments' => 200, 'reposts' => 100,
@@ -275,13 +297,13 @@ test('summary and ranking include only successfully measured destinations', func
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($current, [
         'post_id' => $current->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 10, 'comments' => 0, 'reposts' => 0,
     ]);
     foreach ([MetricsStatus::Failed, MetricsStatus::Unsupported, MetricsStatus::RateLimited] as $status) {
-        PostTarget::factory()->create([
+        createAnalyticsTarget($current, [
             'post_id' => $current->id,
             'metrics_status' => $status->value,
             'likes' => 500, 'comments' => 200, 'reposts' => 100,
@@ -314,7 +336,7 @@ test('analytics queries remain isolated to the active workspace', function (): v
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($post, [
         'post_id' => $post->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 9, 'comments' => 0, 'reposts' => 0,
@@ -333,7 +355,7 @@ test('analytics queries remain isolated to the active workspace', function (): v
         'status' => PostStatus::Published->value,
         'published_at' => Date::now()->subDay(),
     ]);
-    PostTarget::factory()->create([
+    createAnalyticsTarget($otherPost, [
         'post_id' => $otherPost->id,
         'metrics_status' => MetricsStatus::Ok->value,
         'likes' => 900, 'comments' => 0, 'reposts' => 0,
@@ -349,6 +371,149 @@ test('analytics queries remain isolated to the active workspace', function (): v
             ->where('summary.engagement.value', 9)
             ->has('posts', 1)
             ->where('comparison.top.0.id', $post->id));
+});
+
+test('combined platform and account filters stay consistent across screen print and CSV', function (): void {
+    $account = ConnectedAccount::factory()->for($this->workspace)->create([
+        'platform' => Platform::Instagram->value,
+        'handle' => '@=HYPERLINK("https://example.invalid","profile"),line'."\n".'next',
+    ]);
+    $otherAccount = ConnectedAccount::factory()->for($this->workspace)->create([
+        'platform' => Platform::X->value,
+        'handle' => '@other',
+    ]);
+    AccountMetric::factory()->create([
+        'connected_account_id' => $account->id,
+        'captured_at' => Date::now(),
+        'followers' => 0,
+    ]);
+    AccountMetric::factory()->create([
+        'connected_account_id' => $otherAccount->id,
+        'captured_at' => Date::now(),
+        'followers' => 999,
+    ]);
+
+    $post = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'base_text' => '=HYPERLINK("https://example.invalid","post title")',
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    createAnalyticsTarget($post, [
+        'post_id' => $post->id,
+        'connected_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 0,
+        'comments' => 0,
+        'reposts' => 0,
+    ]);
+    $otherPost = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'author_id' => $this->user->id,
+        'status' => PostStatus::Published->value,
+        'published_at' => Date::now()->subDay(),
+    ]);
+    createAnalyticsTarget($otherPost, [
+        'post_id' => $otherPost->id,
+        'connected_account_id' => $otherAccount->id,
+        'platform' => Platform::X->value,
+        'metrics_status' => MetricsStatus::Ok->value,
+        'likes' => 50,
+    ]);
+
+    $query = [
+        'days' => 7,
+        'platform' => Platform::Instagram->value,
+        'account_id' => $account->id,
+    ];
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index', $query))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('filters.platform', Platform::Instagram->value)
+            ->where('filters.account_id', $account->id)
+            ->where('summary.followers.value', 0)
+            ->where('summary.engagement.value', 0)
+            ->where('summary.engagement.coverage.measured', 1)
+            ->where('summary.engagement.coverage.total', 1)
+            ->where('summary.posts.value', 1)
+            ->has('accounts', 1)
+            ->where('accounts.0.id', $account->id)
+            ->has('posts', 1)
+            ->where('posts.0.id', $post->id)
+            ->has('ranking', 1)
+            ->where('ranking.0.id', $post->id));
+
+    $this->get(route('analytics.print', $query))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('analytics/report-print', shouldExist: false)
+            ->where('filters.account_id', $account->id)
+            ->where('summary.posts.value', 1)
+            ->where('posts.0.id', $post->id)
+            ->has('definitions', 3));
+
+    $csv = $this->get(route('analytics.export.csv', $query))
+        ->assertOk()
+        ->assertHeader('content-type', 'text/csv; charset=UTF-8')
+        ->streamedContent();
+
+    expect($csv)->toContain($account->id)
+        ->toContain($post->id)
+        ->toContain('\'@=HYPERLINK')
+        ->toContain('""https://example.invalid""')
+        ->toContain("\nnext\"")
+        ->not->toContain($otherAccount->id)
+        ->not->toContain($otherPost->id);
+});
+
+test('analytics report rejects account ids from another workspace on every endpoint', function (): void {
+    $foreignWorkspace = Workspace::factory()->create();
+    $foreignAccount = ConnectedAccount::factory()->for($foreignWorkspace)->create([
+        'platform' => Platform::Instagram->value,
+    ]);
+    $query = ['days' => 7, 'platform' => Platform::Instagram->value, 'account_id' => $foreignAccount->id];
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index', $query))
+        ->assertNotFound();
+
+    $this->get(route('analytics.print', $query))->assertNotFound();
+    $this->get(route('analytics.export.csv', $query))->assertNotFound();
+});
+
+test('analytics period boundaries use the workspace timezone across daylight saving changes', function (): void {
+    $this->workspace->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+    Date::setTestNow('2026-03-09T12:00:00Z');
+
+    $account = ConnectedAccount::factory()->for($this->workspace)->create([
+        'platform' => Platform::Instagram->value,
+    ]);
+    AccountMetric::factory()->create([
+        'connected_account_id' => $account->id,
+        'captured_at' => Date::parse('2026-03-02T12:59:00Z'),
+        'followers' => 44,
+    ]);
+    AccountMetric::factory()->create([
+        'connected_account_id' => $account->id,
+        'captured_at' => Date::parse('2026-03-02T13:00:00Z'),
+        'followers' => 55,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('analytics.index', ['days' => 7, 'platform' => 'instagram']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('filters.from', '2026-03-02')
+            ->where('filters.to', '2026-03-09')
+            ->where('filters.timezone', 'America/Los_Angeles')
+            ->where('summary.followers.value', 55)
+            ->has('accounts.0.series', 1));
+
+    Date::setTestNow();
 });
 
 test('analytics polling settings are keyed by platform enum values', function (): void {
@@ -411,7 +576,7 @@ test('comparison collapses to single ranked list when fewer than 10 eligible pos
     // Give each post a different engagement total so ranking is deterministic.
     $engagements = [10, 30, 20];
     foreach ($posts as $i => $post) {
-        PostTarget::factory()->create([
+        createAnalyticsTarget($post, [
             'post_id' => $post->id,
             'metrics_status' => MetricsStatus::Ok->value,
             'likes' => $engagements[$i],
@@ -455,13 +620,14 @@ test('discord accounts are excluded from follower analytics', function (): void 
 
 test('the follower series is downsampled to one point per day', function (): void {
     $account = ConnectedAccount::factory()->for($this->workspace)->create();
+    $previousDay = Date::now()->subDay()->startOfDay();
 
     // Three readings on the same day collapse to the last one (30).
-    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => Date::now()->subDay()->setTime(8, 0), 'followers' => 10]);
-    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => Date::now()->subDay()->setTime(14, 0), 'followers' => 20]);
-    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => Date::now()->subDay()->setTime(20, 0), 'followers' => 30]);
+    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => $previousDay->copy()->setTime(8, 0), 'followers' => 10]);
+    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => $previousDay->copy()->setTime(14, 0), 'followers' => 20]);
+    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => $previousDay->copy()->setTime(20, 0), 'followers' => 30]);
     // One reading the next day.
-    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => Date::now()->setTime(9, 0), 'followers' => 40]);
+    AccountMetric::factory()->create(['connected_account_id' => $account->id, 'captured_at' => Date::now()->subHour(), 'followers' => 40]);
 
     $this->actingAs($this->user)
         ->get(route('analytics.index'))

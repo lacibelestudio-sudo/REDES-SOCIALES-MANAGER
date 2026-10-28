@@ -67,6 +67,16 @@ class InstagramConnector implements PublishConnector
             return PublishResult::success($context->target->remote_ids ?? [$context->target->remote_id]);
         }
 
+        if (
+            $context->target->format === PostFormat::Story
+            && ! $context->account->supportsInstagramStories()
+        ) {
+            return PublishResult::failure(
+                ErrorKind::Validation,
+                $context->account->instagramStoryRestrictionMessage() ?? 'Instagram Stories are unavailable for this account.',
+            );
+        }
+
         if ($context->media === []) {
             return PublishResult::failure(ErrorKind::Validation, 'Instagram requires at least one image or video');
         }

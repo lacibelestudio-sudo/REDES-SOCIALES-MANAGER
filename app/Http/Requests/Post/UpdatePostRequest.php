@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Post;
 
+use App\Enums\Platform;
 use App\Enums\PostFormat;
 use App\Http\Requests\Post\Concerns\DerivesMentionHandleRules;
+use App\Models\ConnectedAccount;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdatePostRequest extends FormRequest
 {
@@ -64,6 +67,70 @@ class UpdatePostRequest extends FormRequest
             'auto_repost' => ['sometimes', 'nullable', 'boolean'],
             'skip_sync' => ['sometimes', 'boolean'],
             'expected_updated_at' => ['nullable', 'string'],
+        ];
+    }
+
+    /**
+     * @return array<int, \Closure(Validator): void>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $targets = $this->input('targets', []);
+
+                if (! is_array($targets)) {
+                    return;
+                }
+
+                $storyAccountIds = collect($targets)
+                    ->filter(fn (mixed $target): bool => is_array($target)
+                        && ($target['format'] ?? null) === PostFormat::Story->value
+                        && is_string($target['connected_account_id'] ?? null))
+                    ->pluck('connected_account_id')
+                    ->all();
+
+                if ($storyAccountIds === []) {
+                    return;
+                }
+
+                $accounts = ConnectedAccount::query()
+                    ->where('workspace_id', $this->user()->current_workspace_id)
+                    ->whereIn('id', $storyAccountIds)
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($targets as $index => $target) {
+                    if (
+                        ! is_array($target)
+                        || ($target['format'] ?? null) !== PostFormat::Story->value
+                        || ! is_string($target['connected_account_id'] ?? null)
+                    ) {
+                        continue;
+                    }
+
+                    $account = $accounts->get($target['connected_account_id']);
+
+                    if ($account === null) {
+                        $validator->errors()->add(
+                            "targets.{$index}.connected_account_id",
+                            'The selected account is not available in this workspace.',
+                        );
+
+                        continue;
+                    }
+
+                    if ($account->platform !== Platform::Instagram) {
+                        continue;
+                    }
+
+                    $message = $account->instagramStoryRestrictionMessage();
+
+                    if ($message !== null) {
+                        $validator->errors()->add("targets.{$index}.format", $message);
+                    }
+                }
+            },
         ];
     }
 }

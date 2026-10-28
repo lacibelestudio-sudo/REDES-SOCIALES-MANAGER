@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\InstagramAccountType;
 use App\Enums\PostFormat;
 use App\Enums\WorkspaceRole;
 use App\Models\ConnectedAccount;
@@ -20,7 +21,56 @@ beforeEach(function () {
     $this->account = ConnectedAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => 'instagram',
+        'capabilities' => ['instagram_account_type' => InstagramAccountType::Business->value],
     ]);
+});
+
+test('Instagram Stories are rejected for Creator and unknown account types', function (string $type): void {
+    $this->account->forceFill([
+        'capabilities' => ['instagram_account_type' => $type],
+    ])->save();
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->actingAs($this->user)->putJson(route('posts.update', $post), [
+        'segments' => ['Existing story remains unchanged'],
+        'destination' => ['kind' => 'account', 'id' => $this->account->id],
+        'targets' => [[
+            'connected_account_id' => $this->account->id,
+            'format' => PostFormat::Story->value,
+        ]],
+        'media_ids' => [],
+        'expected_updated_at' => $post->updated_at->toIso8601String(),
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('targets.0.format');
+
+    expect($post->targets()->count())->toBe(0);
+})->with([
+    'Creator' => [InstagramAccountType::Creator->value],
+    'unknown' => [InstagramAccountType::Unknown->value],
+]);
+
+test('a story update cannot use an Instagram account from another workspace', function (): void {
+    $foreignWorkspace = Workspace::factory()->create();
+    $foreignAccount = ConnectedAccount::factory()->create([
+        'workspace_id' => $foreignWorkspace->id,
+        'platform' => 'instagram',
+        'capabilities' => ['instagram_account_type' => InstagramAccountType::Business->value],
+    ]);
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $this->actingAs($this->user)->putJson(route('posts.update', $post), [
+        'segments' => ['No cross-workspace account'],
+        'destination' => ['kind' => 'account', 'id' => $foreignAccount->id],
+        'targets' => [[
+            'connected_account_id' => $foreignAccount->id,
+            'format' => PostFormat::Story->value,
+        ]],
+        'media_ids' => [],
+        'expected_updated_at' => $post->updated_at->toIso8601String(),
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('targets.0.connected_account_id');
+
+    expect($post->targets()->count())->toBe(0);
 });
 
 test('a target format round-trips through save and PostView', function () {

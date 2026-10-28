@@ -24,9 +24,27 @@ type LinkedInOrganization = {
 
 type Selection = { type: 'person' } | { type: 'organization'; id: string };
 
-type Props = { person: LinkedInPerson; organizations: LinkedInOrganization[] };
+type DiscoveryStatus =
+    | 'succeeded'
+    | 'permission_denied'
+    | 'authentication_failed'
+    | 'rate_limited'
+    | 'connection_failed'
+    | 'provider_failed';
 
-export default function ConnectLinkedIn({ person, organizations }: Props) {
+type Props = {
+    person: LinkedInPerson;
+    organizations: LinkedInOrganization[];
+    organizationDiscoveryStatus: DiscoveryStatus;
+    organizationDiscoveryMessage: string | null;
+};
+
+export default function ConnectLinkedIn({
+    person,
+    organizations,
+    organizationDiscoveryStatus,
+    organizationDiscoveryMessage,
+}: Props) {
     const [personChecked, setPersonChecked] = useState(true);
     const [checkedOrgs, setCheckedOrgs] = useState<Record<string, boolean>>({});
     const [processing, setProcessing] = useState(false);
@@ -56,6 +74,24 @@ export default function ConnectLinkedIn({ person, organizations }: Props) {
                 title="Choose what to connect"
                 description="Connect your personal LinkedIn profile and any Pages you administer to this workspace."
             />
+            {organizationDiscoveryMessage !== null ? (
+                <p
+                    role="status"
+                    className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+                >
+                    {organizationDiscoveryMessage}
+                </p>
+            ) : organizationDiscoveryStatus === 'succeeded' &&
+              organizations.length === 0 ? (
+                <p
+                    role="status"
+                    className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+                >
+                    LinkedIn completed the organization lookup and returned no
+                    Pages for this profile. You can still connect the personal
+                    profile.
+                </p>
+            ) : null}
             <div className="flex flex-col gap-4">
                 <label className="flex items-center gap-3 rounded-xl border p-4">
                     <Checkbox

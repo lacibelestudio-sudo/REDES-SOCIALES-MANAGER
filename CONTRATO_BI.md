@@ -1,7 +1,8 @@
 # Contrato de métricas y reportes
 
-Estado: contrato aplicado a la Entrega 1 de analítica; las ampliaciones de BI
-posteriores siguen siendo propuestas.
+Estado: contrato de métricas de la Entrega 1 y filtros/reportes de la Entrega 3
+implementados. La revisión visual autenticada de la Entrega 3 sigue pendiente;
+las ampliaciones de BI posteriores siguen siendo propuestas.
 
 ## Datos mínimos
 
@@ -55,14 +56,36 @@ No sumar snapshots acumulativos del mismo post. Para interacciones ocurridas dur
   ocurrieran durante él. El delta solo se calcula cuando hay al menos un
   destino medido con éxito tanto en el periodo actual como en el anterior.
 
-## Dashboard inicial
+## Dashboard (Entrega 3)
 
-Filtros por intervalo, red y cuenta dentro del workspace autorizado. Cabecera con zona horaria, fecha de actualización y cobertura. Tarjetas: publicaciones, seguidores e interacciones. Gráficos: evolución de seguidores y publicaciones; tabla de contenido y estado por cuenta. Estados visibles: sin conexión, sin datos, parcial, desactualizado y error recuperable.
+La pantalla aplica filtros por intervalo, red y cuenta dentro del workspace
+autorizado. Resumen, gráficos, ranking y cobertura se calculan sobre el mismo
+conjunto filtrado; las fechas se interpretan en la zona horaria del workspace y
+se convierten a límites temporales coherentes. Se conserva `null` frente a cero
+válido, la definición de cobertura y la limitación de que seguidores sumados
+por cuenta no representan personas únicas.
 
 ## Reportes para clientes
 
-Primera versión propuesta: vista imprimible y CSV de los datos mostrados. No hace falta un constructor libre para esta fase. Incluir cliente, intervalo, filtros, fecha, definiciones, cobertura y fuentes. Revalidar autorización al exportar. Neutralizar fórmulas al exportar texto de usuario a CSV; no incluir credenciales, respuestas API crudas o PII innecesaria. Una URL pública de reporte requiere un diseño de expiración/revocación independiente.
+La vista imprimible y el CSV presentan el mismo conjunto filtrado que el
+dashboard. Incluyen cliente/workspace, intervalo, filtros, zona horaria, fecha
+de generación, definiciones y cobertura. La generación del reporte no se
+presenta como actualización de métricas: la fecha de actualización solo se
+muestra cuando existe evidencia. Cada endpoint revalida el workspace y la
+pertenencia de las cuentas. El CSV escapa campos con comillas y saltos de línea
+y neutraliza fórmulas en texto exportado. No incluye secretos, respuestas API
+crudas ni PII innecesaria; no se publican enlaces abiertos.
 
 ## Criterios de aceptación
 
 Sin métricas válidas se muestra «Sin datos»; una lectura válida cero muestra 0. Un destino fallido no aporta contadores como medición actual. Un conjunto parcial declara su cobertura. Un usuario de otro workspace no puede obtener datos ni exportarlos cambiando IDs. Un reporte reproduce filtros y reglas de la pantalla. Los datos de demostración jamás se presentan como resultados reales.
+
+## Evidencia de implementación
+
+Las pruebas focalizadas finales pasaron: Pest (`70 tests, 571 assertions`),
+Vitest (7 pruebas de analytics), TypeScript, Oxfmt, Oxlint (0 warnings, 0
+errors), Pint y Larastan/PHPStan nivel 7. Las pruebas aisladas cubren filtros
+combinados, límites de fecha y zona horaria, acceso entre workspaces, estados
+sin datos/cero/cobertura parcial y CSV con fórmulas potenciales, comillas y
+saltos de línea. La aplicación desplegada respondió con redirección a login;
+la inspección visual autenticada continúa pendiente.

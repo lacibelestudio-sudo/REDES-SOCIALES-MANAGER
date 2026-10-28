@@ -1348,6 +1348,9 @@ export default function Composer({
                         onEmojiSkinToneChange={emojiPrefs.setSkinTone}
                         onAttachGif={shell.gifs_enabled ? attachGif : undefined}
                         activePlatform={activeAccount?.platform}
+                        instagramAccountType={
+                            activeAccount?.instagram_account_type
+                        }
                         autoSplit={
                             activeAccount
                                 ? (state.autoSplitByAccount[activeAccount.id] ??

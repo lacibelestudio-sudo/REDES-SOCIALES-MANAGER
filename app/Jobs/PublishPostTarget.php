@@ -10,6 +10,7 @@ use App\Dto\Publishing\PublishResult;
 use App\Enums\ConnectedAccountStatus;
 use App\Enums\ErrorKind;
 use App\Enums\Platform;
+use App\Enums\PostFormat;
 use App\Enums\PostTargetStatus;
 use App\Events\PostTargetPublished;
 use App\Exceptions\TokenRefreshException;
@@ -147,6 +148,15 @@ class PublishPostTarget implements ShouldQueue
                 $subscriptions->remainingXPosts($workspace) > 0
                     ? 'Monthly X API budget exceeded. Upgrade or wait for the next billing period.'
                     : 'Monthly X publishing quota exceeded. Upgrade or wait for the next billing period.',
+            );
+        } elseif (
+            $target->platform === Platform::Instagram
+            && $target->format === PostFormat::Story
+            && ! $account->supportsInstagramStories()
+        ) {
+            $result = PublishResult::failure(
+                ErrorKind::Validation,
+                $account->instagramStoryRestrictionMessage() ?? 'Instagram Stories are unavailable for this account.',
             );
         } elseif ($account->status === ConnectedAccountStatus::NeedsAttention) {
             $result = PublishResult::failure(

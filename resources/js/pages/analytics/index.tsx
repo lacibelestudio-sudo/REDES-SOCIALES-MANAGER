@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import { lazy, Suspense } from 'react';
 
+import { formatAnalyticsDate } from '@/components/analytics/follower-chart-utils';
 import { StatTile } from '@/components/analytics/stat-tile';
 import { PlatformGlyph } from '@/components/common/platform-glyph';
 import { Card, CardDescription, CardTitle } from '@/components/ui/card';
@@ -13,7 +14,6 @@ import {
     EmptyTitle,
 } from '@/components/ui/empty';
 import { PauseCircle, TrendingUp } from '@/components/ui/icons';
-import { dayjs } from '@/lib/datetime/dayjs';
 import { disabledPlatformLabels } from '@/lib/platforms';
 import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
@@ -40,9 +40,15 @@ const RANGE_OPTIONS = [
 const RANGE_RELOAD_PROPS = [
     'accounts',
     'posts',
+    'ranking',
     'summary',
     'comparison',
-    'rangeDays',
+    'filters',
+    'filterOptions',
+    'reportUrls',
+    'generatedAt',
+    'workspace',
+    'definitions',
 ];
 
 function allDisabled(enabled: Record<string, boolean>) {
@@ -133,9 +139,10 @@ type ComparisonItemProps = {
     row: AnalyticsComparisonRow;
     rank: number;
     isTop: boolean;
+    timezone: string;
 };
 
-function ComparisonItem({ row, rank, isTop }: ComparisonItemProps) {
+function ComparisonItem({ row, rank, isTop, timezone }: ComparisonItemProps) {
     return (
         <Link
             href={postRoute(row.id).url}
@@ -162,7 +169,7 @@ function ComparisonItem({ row, rank, isTop }: ComparisonItemProps) {
                         </span>
                     ))}
                     <span className="text-xs text-muted-foreground">
-                        {dayjs(row.published_at).format('MMM D')}
+                        {formatAnalyticsDate(row.published_at, timezone)}
                     </span>
                 </div>
             </div>
@@ -205,7 +212,9 @@ export default function AnalyticsIndex({
     summary,
     comparison,
     polling,
-    rangeDays,
+    filterOptions,
+    reportUrls,
+    filters: analyticsFilters,
 }: AnalyticsPageProps) {
     const hasSeries = accounts.some((a) => a.series.length > 0);
     const disabledAccountMetricPlatforms = disabledPlatformLabels(
@@ -218,8 +227,8 @@ export default function AnalyticsIndex({
         allDisabled(polling.account_metrics_enabled) &&
         allDisabled(polling.post_metrics_enabled);
     const rangeLabel =
-        RANGE_OPTIONS.find((opt) => opt.days === rangeDays)?.label ??
-        `${rangeDays}d`;
+        RANGE_OPTIONS.find((opt) => opt.days === analyticsFilters.days)
+            ?.label ?? `${analyticsFilters.days}d`;
 
     return (
         <>
@@ -238,6 +247,91 @@ export default function AnalyticsIndex({
                         </p>
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                            href={reportUrls.print}
+                            className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            Print report
+                        </Link>
+                        <a
+                            href={reportUrls.csv}
+                            className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            Export CSV
+                        </a>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4">
+                    <form
+                        action={analyticsRoute().url}
+                        method="get"
+                        className="flex flex-wrap items-end gap-3"
+                    >
+                        <input
+                            type="hidden"
+                            name="days"
+                            value={analyticsFilters.days}
+                        />
+                        <label className="grid gap-1 text-sm">
+                            <span className="font-medium">Platform</span>
+                            <select
+                                name="platform"
+                                defaultValue={analyticsFilters.platform ?? ''}
+                                onChange={(event) => {
+                                    const accountSelect =
+                                        event.currentTarget.form?.elements.namedItem(
+                                            'account_id',
+                                        );
+                                    if (
+                                        accountSelect instanceof
+                                        HTMLSelectElement
+                                    ) {
+                                        accountSelect.value = '';
+                                    }
+                                }}
+                                className="h-10 min-w-40 rounded-lg border border-input bg-background px-3"
+                            >
+                                <option value="">All platforms</option>
+                                {filterOptions.platforms.map((platform) => (
+                                    <option
+                                        key={platform.value}
+                                        value={platform.value}
+                                    >
+                                        {platform.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="grid gap-1 text-sm">
+                            <span className="font-medium">Account</span>
+                            <select
+                                name="account_id"
+                                defaultValue={analyticsFilters.account_id ?? ''}
+                                className="h-10 min-w-52 rounded-lg border border-input bg-background px-3"
+                            >
+                                <option value="">All accounts</option>
+                                {filterOptions.accounts.map((account) => (
+                                    <option key={account.id} value={account.id}>
+                                        {account.display_name ?? account.handle}{' '}
+                                        ({account.platform})
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <button
+                            type="submit"
+                            className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                        >
+                            Apply filters
+                        </button>
+                        <p className="text-sm text-muted-foreground">
+                            {analyticsFilters.from} – {analyticsFilters.to} (
+                            {analyticsFilters.timezone})
+                        </p>
+                    </form>
+
                     {/* Range selector */}
                     <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-1">
                         {RANGE_OPTIONS.map((opt) => (
@@ -245,7 +339,15 @@ export default function AnalyticsIndex({
                                 key={opt.days}
                                 href={
                                     analyticsRoute({
-                                        query: { days: opt.days },
+                                        query: {
+                                            days: opt.days,
+                                            platform:
+                                                analyticsFilters.platform ??
+                                                undefined,
+                                            account_id:
+                                                analyticsFilters.account_id ??
+                                                undefined,
+                                        },
                                     }).url
                                 }
                                 preserveScroll
@@ -253,7 +355,7 @@ export default function AnalyticsIndex({
                                 only={RANGE_RELOAD_PROPS}
                                 className={cn(
                                     'rounded-md px-3 py-1 text-sm font-medium transition-all active:scale-[0.97]',
-                                    rangeDays === opt.days
+                                    analyticsFilters.days === opt.days
                                         ? 'bg-background text-foreground shadow-sm ring-1 ring-border/60'
                                         : 'text-muted-foreground hover:text-foreground',
                                 )}
@@ -383,6 +485,7 @@ export default function AnalyticsIndex({
                                         <FollowerChart
                                             accounts={accounts}
                                             posts={posts}
+                                            timezone={analyticsFilters.timezone}
                                             accountMetricsEnabled={
                                                 polling.account_metrics_enabled
                                             }
@@ -443,6 +546,9 @@ export default function AnalyticsIndex({
                                                     row={row}
                                                     rank={i + 1}
                                                     isTop={true}
+                                                    timezone={
+                                                        analyticsFilters.timezone
+                                                    }
                                                 />
                                             ))}
                                         </div>
@@ -471,6 +577,9 @@ export default function AnalyticsIndex({
                                                                 row={row}
                                                                 rank={i + 1}
                                                                 isTop={true}
+                                                                timezone={
+                                                                    analyticsFilters.timezone
+                                                                }
                                                             />
                                                         ),
                                                     )}
@@ -498,6 +607,9 @@ export default function AnalyticsIndex({
                                                             row={row}
                                                             rank={i + 1}
                                                             isTop={false}
+                                                            timezone={
+                                                                analyticsFilters.timezone
+                                                            }
                                                         />
                                                     ),
                                                 )}
