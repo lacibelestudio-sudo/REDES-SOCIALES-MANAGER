@@ -469,3 +469,38 @@ en 5173. Sin una consulta fiable del estado Docker ni de la capacidad del
 volumen, no se autoriza el único reintento con `COMPOSER_PROCESS_TIMEOUT`
 ampliado. Permanecen pendientes assets actuales, HMR, impresión, filtros,
 CSV y revisión visual; Entrega 3 sigue abierta.
+
+29-10-2026: Se sustituyó para esta ronda el diagnóstico por un único helper
+PowerShell `Invoke-DockerBounded`, cuyo parámetro es `$DockerArguments` (no la
+variable automática `$args`), que inicia `ReadToEndAsync()` para stdout y
+stderr inmediatamente después de `Start()` y devuelve un objeto estructurado
+con `ExitCode`, `Stdout`, `Stderr`, `TimedOut` y el límite aplicado. La
+autoprueba local `docker --version` terminó con código 0 (`Docker version
+29.9.2`), sin consultar el motor.
+
+En una sola ronda, `docker ps -a --filter
+label=com.docker.compose.project=shoutrrr` respondió con código 0:
+`shoutrrr-app-1` estaba saludable; el contenedor candidato
+`426474c1ddc5_shoutrrr-app-1` estaba `Created` con `APP_DEBUG=true` y
+`AUTORUN_ENABLED=true`; no había servicio `dependencies` activo. El candidato
+no se arrancó. Su montaje efectivo ya identificaba el volumen
+`shoutrrr_dev_vendor` en `/var/www/html/vendor`, separado del bind mount del
+checkout, junto con los mismos volúmenes persistentes de storage y SQLite.
+
+La única sonda prevista sobre ese volumen se ejecutó como
+`docker run --name rsmanager-vendor-probe-10993b --rm --pull=never --user www-data --entrypoint /bin/bash --mount type=volume,source=shoutrrr_dev_vendor,target=/var/www/html/vendor shoutrrr:dev -lc "set -eu; echo VENDOR_FILESYSTEM; df -Pk /var/www/html/vendor; echo VENDOR_INODES; df -Pi /var/www/html/vendor; test -d /var/www/html/vendor; test -w /var/www/html/vendor; probe=/var/www/html/vendor/.rsmanager-write-check-10993b; test ! -e \"$probe\"; : > \"$probe\"; test -f \"$probe\"; rm -f \"$probe\"; test ! -e \"$probe\"; echo WRITE_CHECK=PASS; test -f /var/www/html/vendor/autoload.php && echo AUTOLOAD_PRESENT=yes || echo AUTOLOAD_PRESENT=no; test -f /var/www/html/vendor/composer/installed.json && echo INSTALLED_METADATA_PRESENT=yes || echo INSTALLED_METADATA_PRESENT=no; printf VENDOR_TOPLEVEL_DIRS=; find /var/www/html/vendor -mindepth 1 -maxdepth 1 -type d | wc -l"`.
+El comando venció el límite de diagnóstico de 20 s; no produjo código de salida
+del contenedor ni salida útil. Se hizo la comprobación nominal requerida:
+`docker ps -a --filter name=rsmanager-vendor-probe-10993b` respondió y mostró
+el auxiliar como `Created`. No se inició ni eliminó manualmente el auxiliar,
+no se repitió `ps`, no se ejecutó otro `exec`/sonda y no se volvió a invocar
+Compose. La disponibilidad de Docker es parcial, no hay resultado sobre el
+espacio/inodos ni la escritura del volumen, y el estado del auxiliar no permite
+certificar que la sonda completara o limpiara su archivo temporal.
+
+En consecuencia, no se reintentó Composer, no se inició app/Vite y no se
+continuó con Wayfinder/Bun ni con validaciones visuales. Se conserva el
+contenedor candidato sin iniciar y todos los volúmenes. Sin evidencia de
+finalización de la sonda, no se afirma que `vendor` esté completo o utilizable.
+Entrega 3 permanece abierta por assets/HMR, impresión, filtros y CSV; Entrega
+2 permanece abierta por validación de proveedores reales.
