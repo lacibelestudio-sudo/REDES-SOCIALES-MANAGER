@@ -530,3 +530,49 @@ siguiente paso previsto será reanudar las dependencias con una espera de CLI
 mayor cuando se autorice continuar; no hace falta reiniciar Docker Desktop por
 esta evidencia. La app saludable, los datos y todos los volúmenes se
 mantuvieron intactos; no se validó aún Vite ni Entrega 3.
+
+29-10-2026: Se reanudó una sola vez la preparación sobre los volúmenes
+dedicados existentes, sin `--rm`, con el contenedor
+`rsmanager-dependencies-recovery-20261029-1118` y
+`COMPOSER_PROCESS_TIMEOUT=900` solo en esa invocación. No había CLI ni
+contenedor `dependencies` activo antes del comienzo. La ejecución terminó con
+código 0; el contenedor retenido informa `StartedAt=16:19:46Z`,
+`FinishedAt=16:38:43Z`, estado `exited`, sin error. El tiempo total del cliente
+fue 1172 s; el arranque Docker hasta `StartedAt` tomó aproximadamente 35 s y
+el contenedor se ejecutó 1137 s. Los archivos stdout, stderr y código están
+guardados localmente en el directorio de sesión
+`files/dependency-recovery-20261029-1118` (no se publican en GitHub).
+
+Composer finalizó exitosamente sobre `composer.lock` y
+`shoutrrr_dev_vendor`, con el timeout interno elevado solo para esta
+ejecución. La salida conservada muestra extracción completa de los seis
+paquetes pendientes, autoload optimizado, descubrimiento de paquetes y
+Wayfinder generados; Bun terminó con `bun install --frozen-lockfile` sin
+cambios en 603 instalaciones/702 paquetes. La comprobación de Vite devolvió
+`vite/8.3.4 linux-x64 bun-v26.3.0` y el comando concluyó con
+“Local Composer and Bun dependencies are ready.” El proceso de dependencia
+montó `shoutrrr_dev_vendor` y `shoutrrr_dev_node_modules` como volúmenes de
+escritura separados del bind mount del checkout. No se repitió instalación.
+
+Después se intentó una sola vez
+`docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build app`.
+Terminó con código 1. Compose reportó que al recrear
+`426474c1ddc5_shoutrrr-app-1` el nombre `/shoutrrr-app-1` seguía ocupado por el
+contenedor existente `426474c1ddc553fb98bb12daf0a2e0f686ed37e5ddb319859bb731cd58ce6e02`.
+La consulta `docker ps` posterior respondió con código 0 y mostró la app
+existente `Up ... (unhealthy)`, el candidato nuevo
+`f69362d7ab62_shoutrrr-app-1` en `Created` y el contenedor de dependencias
+terminado en 0. `/accounts` devolvió curl 52 (respuesta vacía). Una
+inspección puntual de `shoutrrr-app-1` excedió 12 s; por eso no se conoce su
+detalle de healthcheck ni la configuración del candidato. No se inició Vite,
+no se repitió `up`, y no se tocaron los volúmenes de datos ni el contenedor
+retenido de dependencias.
+
+El bloqueo actual es el conflicto de nombre durante la recreación de la app;
+la disponibilidad de health e inspección también se degradó tras el intento.
+Se requiere una ventana de recuperación limitada a este proyecto para
+identificar el propietario/configuración de ambos contenedores de app y
+resolver la colisión antes de otro `up`. Hasta entonces no se afirma que la
+app local con Vite esté desplegada: health, login con la instalación nueva,
+assets, HMR, impresión, filtros y CSV siguen pendientes. Worker, scheduler y
+SSR continúan desactivados en el override; no hubo migraciones ni seeders.
