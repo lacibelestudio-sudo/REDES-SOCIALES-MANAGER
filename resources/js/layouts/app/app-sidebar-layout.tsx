@@ -1,3 +1,5 @@
+import { usePage } from '@inertiajs/react';
+
 import { AppContent } from '@/components/layout/app-content';
 import { AppShell } from '@/components/layout/app-shell';
 import { AppSidebar } from '@/components/layout/app-sidebar';
@@ -9,11 +11,25 @@ export default function AppSidebarLayout({
     children,
     breadcrumbs = [],
 }: AppLayoutProps) {
+    const isPrintReport = usePage().url.split('?')[0] === '/analytics/print';
+
     return (
         <AppShell variant="sidebar">
-            <AppSidebar />
-            <AppContent variant="sidebar" className="overflow-x-hidden">
-                <AppSidebarHeader breadcrumbs={breadcrumbs} />
+            <AppSidebar
+                wrapperClassName={isPrintReport ? 'print:hidden' : undefined}
+            />
+            <AppContent
+                variant="sidebar"
+                className={
+                    isPrintReport
+                        ? 'print:m-0 print:ml-0 print:w-full print:max-w-none print:overflow-visible print:rounded-none print:shadow-none'
+                        : 'overflow-x-hidden'
+                }
+            >
+                <AppSidebarHeader
+                    breadcrumbs={breadcrumbs}
+                    className={isPrintReport ? 'print:hidden' : undefined}
+                />
                 {children}
             </AppContent>
             <CommandPalette />

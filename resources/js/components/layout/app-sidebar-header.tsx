@@ -6,6 +6,7 @@ import { Search } from '@/components/ui/icons';
 import { Kbd } from '@/components/ui/kbd';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useLivePropsPoll } from '@/hooks/use-live-props';
+import { cn } from '@/lib/utils';
 import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
 
 /**
@@ -26,13 +27,20 @@ const CHROME_POLL_MS = 60_000;
 
 export function AppSidebarHeader({
     breadcrumbs = [],
+    className,
 }: {
     breadcrumbs?: BreadcrumbItemType[];
+    className?: string;
 }) {
     useLivePropsPoll({ only: LIVE_CHROME_PROPS, intervalMs: CHROME_POLL_MS });
 
     return (
-        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border/50 bg-background/85 px-6 backdrop-blur-md transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-4">
+        <header
+            className={cn(
+                'sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border/50 bg-background/85 px-6 backdrop-blur-md transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-4',
+                className,
+            )}
+        >
             <div className="flex items-center gap-2">
                 <SidebarTrigger className="-ml-1" />
                 <Breadcrumbs breadcrumbs={breadcrumbs} />

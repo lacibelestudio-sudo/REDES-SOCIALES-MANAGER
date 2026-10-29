@@ -102,7 +102,7 @@ conexiones reales ni evidencia de acceso. Por tanto, ninguna lectura de API ni
 publicación real fue autorizada o ejecutada. La matriz registra la validación
 real como pendiente y Entrega 2 permanece abierta.
 
-## Entrega 3 — Dashboard y reportes (implementada; revisión visual pendiente)
+## Entrega 3 — Dashboard y reportes (implementada; cierre local bloqueado)
 
 La pantalla de analítica incorpora filtros por periodo, plataforma y cuenta,
 restringidos al workspace autorizado. Resumen, gráficos y ranking usan el mismo
@@ -122,16 +122,49 @@ Oxfmt, Oxlint (0 warnings, 0 errors), TypeScript, Pint y Larastan/PHPStan nivel
 datos, cero válido, cobertura parcial, límites de fecha/zona horaria,
 autorización de workspace y seguridad CSV se verificaron con pruebas aisladas.
 
-El candidato está desplegado en el servicio local `shoutrrr-app-1` desde la
-imagen `shoutrrr:dev` con digest
-`sha256:3aadbfd3d4b59d6f3ccdcc4e5588ff06764ab7155fdc69833df231d22b1dc466`;
-el contenedor está `healthy` y `/analytics` redirige a `/login` sin sesión.
-La revisión visual de analítica, impresión, CSV y pantallas de conexiones no
-está completa porque el navegador integrado no tiene una sesión autenticada.
-No se usaron los valores autofill de la pantalla ni se añadieron datos. Para
-evitar efectos externos durante la inspección, los procesos internos de cola y
-scheduler están temporalmente deshabilitados mediante variables de entorno de
-la ejecución Compose; no se modificaron `.env`, Compose ni volúmenes.
+La imagen desplegada antes de la corrección visual era `shoutrrr:dev`, digest
+`sha256:3aadbfd3d4b59d6f3ccdcc4e5588ff06764ab7155fdc69833df231d22b1dc466`.
+En una sesión autenticada se inspeccionaron analítica y el reporte imprimible:
+los filtros de periodo, plataforma y cuenta se conservaron y el reporte mostró
+sus metadatos. La emulación de impresión reveló que el encabezado y la barra
+lateral seguían visibles. El enlace CSV conservó los filtros, pero no se
+verificaron la respuesta ni el contenido descargado. Tampoco se completó la
+revisión de conexiones/compositor ni la comprobación de errores del navegador.
+
+Hay una corrección local en
+`resources/js/layouts/app/app-sidebar-layout.tsx`,
+`resources/js/components/layout/app-sidebar.tsx`,
+`resources/js/components/layout/app-sidebar-header.tsx` y
+`resources/js/components/ui/sidebar.tsx` para ocultar el chrome de la app y
+expandir el reporte al imprimir. Aún no se han ejecutado formato, lint ni
+TypeScript sobre esos archivos; la corrección tampoco está desplegada.
+
+Tras el reinicio manual de Docker Desktop, `shoutrrr-app-1` respondió
+`running/healthy` con la imagen anterior y conservó los volúmenes
+`shoutrrr_storage` y `shoutrrr_sqlite`; `/analytics` respondió HTTP 302 a
+`/login`. La cola y el scheduler estaban deshabilitados mediante overrides de
+la ejecución anterior, sin cambios a `.env`, Compose ni volúmenes.
+
+El único reintento posterior usó:
+`docker --context desktop-linux compose --progress plain -f docker-compose.development.yaml build --build-arg BUILDKIT_SYNTAX=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e app`.
+La resolución del frontend terminó (`#2 DONE 21.1s`); `build:ssr` ya había
+terminado correctamente en el intento previo posterior a la corrección y esta
+vez fue acierto de caché. La copia de `node_modules` también fue acierto de
+caché, Composer terminó en 235.6 s y el build avanzó a
+`#52 exporting to image / exporting layers`. No hubo salida
+adicional durante aproximadamente 24 minutos; el CLI se detuvo de forma
+controlada sin código de salida final. Luego `docker version` no respondió en
+30 s y `/analytics` agotó su tiempo de espera en 5 s. El estado actual del
+Engine y del contenedor no se pudo confirmar. El usuario confirmó que hay
+otros servicios activos; no se hizo un segundo reinicio de Docker Desktop para
+evitar interrumpirlos. En el host Windows no están disponibles Bun, Node.js,
+PHP ni Composer, ni los binarios locales de formato/lint/tipos; por eso no se
+pudieron ejecutar esos controles sin Docker. No se repitió el build.
+
+No se usaron datos autofill, no se añadieron datos persistentes ni se inició
+OAuth o publicación. Entrega 2 sigue abierta por validación real externa.
+Entrega 3 no se declara completada: falta validar la corrección, construir y
+desplegar esa imagen, comprobar CSV y completar la revisión visual.
 
 ## Entrega 4 — Creación asistida y aprobación
 
@@ -183,6 +216,60 @@ dispone de una sesión iniciada para verificar analítica, impresión, CSV,
 compositor y conexiones. No se iniciaron OAuth, publicaciones, ni se
 insertaron datos. Entrega 2 sigue abierta por validación real externa; Entrega
 3 no se declara completada hasta terminar la inspección visual.
+
+28-10-2026 (continuación): En la inspección autenticada se detectó que el
+chrome de la aplicación aparecía en la impresión. Se preparó una corrección
+local, sin ejecutar aún sus controles de formato/lint/tipos. Después de un
+reinicio normal de Docker Desktop, el servicio anterior quedó saludable, pero
+el único build nuevo se bloqueó al exportar las capas de la imagen. Se detuvo
+su CLI tras unos 24 minutos sin avance visible; Docker dejó de responder y la
+petición HTTP local agotó el tiempo de espera. El usuario confirmó otros
+servicios Docker activos, por lo que no se reinició de nuevo el motor. No se
+recreó el contenedor ni se tocaron datos/volúmenes. `inicio-adaptacion.patch`
+permanece ajeno y sin seguimiento.
+
+28-10-2026 19:53: Una comprobación limitada de `docker version` y una consulta
+de `docker inspect` respondieron con código 0. `shoutrrr-app-1` está
+`running/healthy`, todavía en la imagen anterior
+`sha256:3aadbfd3d4b59d6f3ccdcc4e5588ff06764ab7155fdc69833df231d22b1dc466`;
+`/analytics` responde HTTP 302 a `/login`. Los overrides efectivos continúan
+con `QUEUE_WORKER_ENABLED=false` y `SCHEDULER_ENABLED=false`, y los montajes
+`shoutrrr_storage` y `shoutrrr_sqlite` siguen presentes. No se ejecutó otro
+build ni se recreó el servicio.
+
+Revisión del flujo local: `docker-compose.development.yaml` construye la imagen
+`shoutrrr:dev` y solo monta los volúmenes de `storage` y SQLite; no monta el
+código ni define un servicio Vite. Por ello, un cambio frontend exige
+reconstruir y reemplazar la imagen con el flujo actual. El Dockerfile instala
+Composer con dependencias de desarrollo para generar Wayfinder y luego vuelve a
+instalar sin dependencias dev para `vendor/` final. Copia `node_modules` porque
+el proceso SSR opcional usa el runtime Bun; SSR está desactivado por defecto.
+El script `99-debug-mode.sh` ejecuta `composer install --dev` solo si
+`APP_DEBUG=true` para habilitar herramientas de desarrollo en la imagen local,
+y continúa si falla. `composer dev` levanta un servidor PHP en el host, Vite,
+worker, scheduler y logs; no es seguro ni adecuado para esta instalación sin
+aislar workers/scheduler y usar los binarios PHP/Bun disponibles. `bun run dev`
+por sí solo tampoco se integra al Compose actual: el archivo `public/hot` y el
+código del host no son visibles dentro del contenedor.
+
+No hay actualmente un flujo hot-reload apto para el servicio Compose activo. La
+opción de desarrollo a evaluar, sin activarla en esta entrega, es un override
+dedicado que monte el código del checkout y ejecute Vite con Bun, compartiendo
+la configuración y los volúmenes nominales actuales; antes de usarlo hay que
+definir el intercambio de `public/hot`, proteger `vendor`/`node_modules` de
+montajes superpuestos, comprobar los puertos 8080 y 5173, y mantener desactivados
+worker y scheduler durante la inspección. No se cambió Dockerfile ni Compose.
+
+Cobertura de la corrección: las pruebas existentes de `app-sidebar` y
+`app-sidebar-header` cubren navegación y actualización del chrome, y las
+pruebas de analytics cubren componentes de métricas. No hay prueba que verifique
+el selector de ruta `/analytics/print`, la ausencia de chrome al imprimir o la
+preservación visual del dashboard normal. Los controles previos aprobados
+pertenecen al candidato anterior; formato, lint, TypeScript y Vitest focalizado
+deben repetirse para la corrección cuando haya herramientas disponibles.
+
+La corrección se versiona junto con este estado aunque la validación de
+impresión permanezca pendiente. No se declara completada la Entrega 3.
 
 26-10-2026: Entregas 0 y 1 integradas localmente sobre `main` (base
 `28bbc7f`). Pest focalizado pasó (20 tests, 294 assertions, SQLite en memoria).

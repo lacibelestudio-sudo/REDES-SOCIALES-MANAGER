@@ -107,7 +107,11 @@ const postsNavItems: NavItem[] = [
     { title: 'Messages', href: messagesRoute(), icon: MessageSquare },
 ];
 
-export function AppSidebar() {
+export function AppSidebar({
+    wrapperClassName,
+}: {
+    wrapperClassName?: string;
+}) {
     const {
         workspaces,
         features,
@@ -158,7 +162,11 @@ export function AppSidebar() {
             : isCurrentOrParentUrl(item.href);
 
     return (
-        <Sidebar collapsible="icon" variant="inset">
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            wrapperClassName={wrapperClassName}
+        >
             <SidebarHeader className="gap-1.5">
                 <SidebarMenu>
                     <SidebarMenuItem className="flex items-center gap-1">

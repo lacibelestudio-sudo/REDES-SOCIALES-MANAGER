@@ -1,8 +1,11 @@
 # Contrato de métricas y reportes
 
 Estado: contrato de métricas de la Entrega 1 y filtros/reportes de la Entrega 3
-implementados. La revisión visual autenticada de la Entrega 3 sigue pendiente;
-las ampliaciones de BI posteriores siguen siendo propuestas.
+implementados. La inspección autenticada detectó un defecto en el diseño de
+impresión; su corrección está versionada, pero sin validar ni desplegar. El
+servicio local volvió a responder saludable con la imagen anterior; la Entrega
+3 sigue abierta hasta completar controles, build y revisión visual/CSV. Las
+ampliaciones de BI posteriores siguen siendo propuestas.
 
 ## Datos mínimos
 
@@ -82,10 +85,17 @@ Sin métricas válidas se muestra «Sin datos»; una lectura válida cero muestr
 
 ## Evidencia de implementación
 
-Las pruebas focalizadas finales pasaron: Pest (`70 tests, 571 assertions`),
-Vitest (7 pruebas de analytics), TypeScript, Oxfmt, Oxlint (0 warnings, 0
-errors), Pint y Larastan/PHPStan nivel 7. Las pruebas aisladas cubren filtros
-combinados, límites de fecha y zona horaria, acceso entre workspaces, estados
-sin datos/cero/cobertura parcial y CSV con fórmulas potenciales, comillas y
-saltos de línea. La aplicación desplegada respondió con redirección a login;
-la inspección visual autenticada continúa pendiente.
+Las pruebas focalizadas del candidato anterior pasaron: Pest (`70 tests, 571
+assertions`), Vitest (7 pruebas de analytics), TypeScript, Oxfmt, Oxlint (0
+warnings, 0 errors), Pint y Larastan/PHPStan nivel 7. Las pruebas aisladas
+cubren filtros combinados, límites de fecha y zona horaria, acceso entre
+workspaces, estados sin datos/cero/cobertura parcial y CSV con fórmulas
+potenciales, comillas y saltos de línea. La inspección autenticada confirmó
+filtros y metadatos en analítica/reporte, pero reveló que el encabezado y la
+barra lateral aparecen en impresión. Solo se confirmó que el enlace CSV
+conserva los filtros; no se comprobó su respuesta ni contenido. La corrección
+local del layout aún no tiene controles de frontend aprobados y no se desplegó:
+el build se bloqueó al exportar capas y Docker dejó temporalmente de responder.
+Una comprobación posterior confirmó que el servicio está saludable en la imagen
+anterior; el candidato corregido no está desplegado. Por tanto, los resultados
+previos no certifican el candidato corregido ni su despliegue.
