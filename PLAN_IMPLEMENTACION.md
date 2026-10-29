@@ -237,39 +237,71 @@ con `QUEUE_WORKER_ENABLED=false` y `SCHEDULER_ENABLED=false`, y los montajes
 `shoutrrr_storage` y `shoutrrr_sqlite` siguen presentes. No se ejecutó otro
 build ni se recreó el servicio.
 
-Revisión del flujo local: `docker-compose.development.yaml` construye la imagen
-`shoutrrr:dev` y solo monta los volúmenes de `storage` y SQLite; no monta el
-código ni define un servicio Vite. Por ello, un cambio frontend exige
-reconstruir y reemplazar la imagen con el flujo actual. El Dockerfile instala
-Composer con dependencias de desarrollo para generar Wayfinder y luego vuelve a
-instalar sin dependencias dev para `vendor/` final. Copia `node_modules` porque
-el proceso SSR opcional usa el runtime Bun; SSR está desactivado por defecto.
-El script `99-debug-mode.sh` ejecuta `composer install --dev` solo si
-`APP_DEBUG=true` para habilitar herramientas de desarrollo en la imagen local,
-y continúa si falla. `composer dev` levanta un servidor PHP en el host, Vite,
-worker, scheduler y logs; no es seguro ni adecuado para esta instalación sin
-aislar workers/scheduler y usar los binarios PHP/Bun disponibles. `bun run dev`
-por sí solo tampoco se integra al Compose actual: el archivo `public/hot` y el
-código del host no son visibles dentro del contenedor.
+Revisión del flujo local: existe `docker-compose.dev.yml`, pero no se ejecuta
+directamente porque su comando de `app` instala Composer, migra, crea el enlace
+de storage y ejecuta `DefaultUserSeeder`; además, monta todo el proyecto sin
+proteger `vendor` ni `node_modules`. El Compose seleccionado para el servicio
+actual (`docker-compose.development.yaml`) no montaba el código ni definía
+Vite, por lo que un cambio frontend requería reconstruir la imagen. Se preparó
+el override explícito `docker-compose.local-vite.yaml` sobre esa base: conserva
+imagen, proyecto, puerto 8080 y volúmenes persistentes; monta el checkout,
+protege `vendor` y `node_modules` con volúmenes separados y comparte
+`public/hot` a través del bind mount del código. No contiene migraciones ni
+seeders y desactiva cola, scheduler y SSR.
 
-No hay actualmente un flujo hot-reload apto para el servicio Compose activo. La
-opción de desarrollo a evaluar, sin activarla en esta entrega, es un override
-dedicado que monte el código del checkout y ejecute Vite con Bun, compartiendo
-la configuración y los volúmenes nominales actuales; antes de usarlo hay que
-definir el intercambio de `public/hot`, proteger `vendor`/`node_modules` de
-montajes superpuestos, comprobar los puertos 8080 y 5173, y mantener desactivados
-worker y scheduler durante la inspección. No se cambió Dockerfile ni Compose.
+El Dockerfile instala Composer con dependencias de desarrollo para generar
+Wayfinder y luego vuelve a instalar sin dependencias dev para `vendor/` final.
+Copia `node_modules` para el runtime Bun del SSR opcional, desactivado por
+defecto. El entrypoint del servidor ejecuta `composer install --dev` y
+`optimize:clear` cuando `APP_DEBUG=true`; `10-init-app.sh` solo crea directorios
+de storage y el archivo SQLite si falta. Estos efectos se mantienen bajo el
+override, sin migrar, sembrar ni reemplazar una base existente.
 
-Cobertura de la corrección: las pruebas existentes de `app-sidebar` y
-`app-sidebar-header` cubren navegación y actualización del chrome, y las
-pruebas de analytics cubren componentes de métricas. No hay prueba que verifique
-el selector de ruta `/analytics/print`, la ausencia de chrome al imprimir o la
-preservación visual del dashboard normal. Los controles previos aprobados
-pertenecen al candidato anterior; formato, lint, TypeScript y Vitest focalizado
-deben repetirse para la corrección cuando haya herramientas disponibles.
+El procedimiento preparado es iniciar primero `app` con `--no-build`, esperar
+su healthcheck y luego iniciar Vite con el mismo override. Bun se ejecuta
+después del Composer del entrypoint, no en paralelo sobre los mismos
+directorios. Vite escucha en `0.0.0.0:5173` y anuncia `localhost:5173` al
+navegador. Al arrancar y al cerrar, elimina `public/hot`. Para volver al modo
+de imagen, detener Vite con `docker compose -p shoutrrr
+-f docker-compose.development.yaml -f docker-compose.local-vite.yaml stop vite`
+y recrear solo `app` desde el Compose base manteniendo worker y scheduler
+apagados:
+`$env:QUEUE_WORKER_ENABLED='false'; $env:SCHEDULER_ENABLED='false'; $env:INERTIA_SSR_ENABLED='false'; docker compose -p shoutrrr -f docker-compose.development.yaml up -d --no-build --force-recreate app`.
+No iniciar workers/scheduler hasta autorizarlo. No se modifican `.env`, APP_KEY,
+usuarios, contraseñas ni datos.
 
-La corrección se versiona junto con este estado aunque la validación de
-impresión permanezca pendiente. No se declara completada la Entrega 3.
+Cobertura de la corrección: se añadió una prueba Vitest focalizada para la
+ruta `/analytics/print` con filtros, el dashboard normal y el cableado de las
+clases print-only al layout. Las pruebas existentes de `app-sidebar` y
+`app-sidebar-header` cubren navegación y actualización del chrome. La nueva
+prueba no se ejecutó por falta de un runner disponible; los controles previos
+aprobados pertenecen al candidato anterior y no validan este cambio.
+
+La configuración combinada pasó `docker compose config --format json` (código
+0), sin imprimir valores secretos. Se compararon en memoria la APP_KEY y
+configuración de DB/URL con el contenedor existente; los valores coincidían.
+El puerto 5173 estaba libre y se confirmó que no hay migración ni seeder en el
+comando efectivo. Al ejecutar únicamente `up -d --no-build app`, Docker creó
+los volúmenes de dependencias `shoutrrr_dev_vendor` y
+`shoutrrr_dev_node_modules`, pero la operación quedó bloqueada en
+`Container shoutrrr-app-1 Recreate` durante unos 11 minutos. Se detuvo solo el
+CLI de Compose; una consulta limitada de `docker inspect` después agotó 10 s.
+No se ejecutó el servicio Vite ni un build. La sesión de navegador siguió
+mostrando la pantalla autenticada anterior, sin assets servidos desde el puerto
+5173; no demuestra que la recreación local haya terminado. No se lanzó otra
+llamada Docker. El estado de contenedor/health y los overrides efectivos tras
+el intento quedan sin confirmar; antes del intento estaban saludables con
+worker, scheduler y SSR apagados y volúmenes persistentes intactos.
+
+La corrección incluye un helper de detección de `/analytics/print` y pruebas
+para el dashboard normal, la ruta de reporte con filtros y la conexión de esa
+condición con las clases print-only del layout. No se pudieron ejecutar
+formato, lint, TypeScript ni Vitest: el host carece de Bun/Node y el motor
+Docker dejó de responder durante la recreación. VS Code no registró un
+controlador de tests, así que su intento focalizado no ejecutó pruebas.
+Impresión, CSV descargado y pantallas de conexiones/compositor siguen sin
+validación con el candidato final. La Entrega 3 permanece abierta; tampoco se
+afirma que el cambio esté incluido en una imagen reconstruida.
 
 26-10-2026: Entregas 0 y 1 integradas localmente sobre `main` (base
 `28bbc7f`). Pest focalizado pasó (20 tests, 294 assertions, SQLite en memoria).

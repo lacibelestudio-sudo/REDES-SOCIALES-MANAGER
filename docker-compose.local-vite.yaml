@@ -1,0 +1,52 @@
+# Local frontend iteration on top of the existing development image and data.
+# Start the app first (wait for it to become healthy), then start Vite:
+#   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build app
+#   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build vite
+# Stop Vite without leaving Laravel pointed at a stale hot file:
+#   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml stop vite
+services:
+    app:
+        image: shoutrrr:dev
+        pull_policy: never
+        command: ["supervisord", "-c", "/etc/supervisor/laravel.conf"]
+        environment:
+            QUEUE_WORKER_ENABLED: "false"
+            SCHEDULER_ENABLED: "false"
+            INERTIA_SSR_ENABLED: "false"
+        volumes:
+            - .:/var/www/html:cached
+            - dev-vendor:/var/www/html/vendor
+            - dev-node-modules:/var/www/html/node_modules
+
+    vite:
+        image: shoutrrr:dev
+        pull_policy: never
+        working_dir: /var/www/html
+        entrypoint: []
+        environment:
+            VITE_HOST: "${VITE_HOST:-0.0.0.0}"
+            VITE_PORT: "${VITE_PORT:-5173}"
+            VITE_HMR_HOST: "${VITE_HMR_HOST:-localhost}"
+        ports:
+            - "${VITE_PORT:-5173}:${VITE_PORT:-5173}"
+        volumes:
+            - .:/var/www/html:cached
+            - dev-vendor:/var/www/html/vendor
+            - dev-node-modules:/var/www/html/node_modules
+        command:
+            - /bin/bash
+            - -lc
+            - |
+                set -eu
+                rm -f public/hot
+                bun install --frozen-lockfile
+                bun run dev -- --host "$$VITE_HOST" --port "$$VITE_PORT" --strictPort &
+                vite_pid=$$!
+                trap 'kill "$$vite_pid" 2>/dev/null || true; wait "$$vite_pid" 2>/dev/null || true; rm -f public/hot' EXIT INT TERM
+                wait "$$vite_pid"
+
+volumes:
+    dev-vendor:
+        name: shoutrrr_dev_vendor
+    dev-node-modules:
+        name: shoutrrr_dev_node_modules

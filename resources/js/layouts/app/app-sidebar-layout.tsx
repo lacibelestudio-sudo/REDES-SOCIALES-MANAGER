@@ -7,11 +7,13 @@ import { AppSidebarHeader } from '@/components/layout/app-sidebar-header';
 import { CommandPalette } from '@/components/layout/command-palette';
 import type { AppLayoutProps } from '@/types';
 
+import { isAnalyticsPrintRoute } from './is-analytics-print-route';
+
 export default function AppSidebarLayout({
     children,
     breadcrumbs = [],
 }: AppLayoutProps) {
-    const isPrintReport = usePage().url.split('?')[0] === '/analytics/print';
+    const isPrintReport = isAnalyticsPrintRoute(usePage().url);
 
     return (
         <AppShell variant="sidebar">
