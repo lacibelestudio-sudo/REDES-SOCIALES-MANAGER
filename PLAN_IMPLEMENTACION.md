@@ -576,3 +576,49 @@ resolver la colisión antes de otro `up`. Hasta entonces no se afirma que la
 app local con Vite esté desplegada: health, login con la instalación nueva,
 assets, HMR, impresión, filtros y CSV siguen pendientes. Worker, scheduler y
 SSR continúan desactivados en el override; no hubo migraciones ni seeders.
+
+29-10-2026, actualización tras conciliar los contenedores: el conflicto exacto
+guardado en `app-up.stderr.log` fue que Compose no pudo asignar
+`/shoutrrr-app-1` porque lo ocupaba el contenedor
+`426474c1ddc553fb98bb12daf0a2e0f686ed37e5ddb319859bb731cd58ce6e02`.
+La inspección por ID determinó que ese era la app anterior: servicio Compose
+`app`, solo Compose base, estado `exited` (137), montajes persistentes
+`shoutrrr_storage` y `shoutrrr_sqlite`, flags `APP_DEBUG=true` y
+`AUTORUN_ENABLED=true`; su capa escribible medía 157712384 bytes. Se conservó,
+no se renombró ni eliminó.
+
+El candidato de configuración local era distinto: ID `d63f856b44a7`, nombre
+`f69362d7ab62_shoutrrr-app-1`, etiqueta de servicio `app`, ambos Compose
+(development + local-vite), estado inicial `created`, capa escribible de 4096
+bytes, bind mount del checkout, volúmenes dedicados `shoutrrr_dev_vendor` y
+`shoutrrr_dev_node_modules`, y los volúmenes persistentes de storage/SQLite.
+Sus flags eran correctos: APP_DEBUG, AUTORUN, worker, scheduler y SSR en
+`false`. No había una recreación/CLI Compose activa. Para evitar el nombre
+ocupado no se repitió `compose up`: se inició por ID el candidato ya creado,
+con código 0, preservando la app anterior.
+
+El candidato arrancó y completó `php artisan storage:link`; luego lanzó
+supervisord, pero permaneció `unhealthy`. El healthcheck real
+`healthcheck-octane` terminó repetidamente con exit -1 y
+`Health check exceeded timeout (10s)`. `/accounts` devolvió curl 52, sin
+respuesta HTTP. `docker logs --tail 100` mostró la inicialización de
+ServersideUp y el éxito del enlace de storage, sin error Laravel/Octane ni
+registro visible de procesos supervisados. El archivo supervisor dentro de la
+imagen coincidía por SHA-256 con `docker/supervisord.conf`. Un snapshot de
+procesos observó supervisord en PID 1 y varias comprobaciones
+`php artisan octane:status`, pero no un proceso Octane/FrankenPHP servidor.
+`supervisorctl status` no pudo consultar estado porque el archivo no tiene
+sección `supervisorctl`; esto no identifica la causa raíz. Los logs Laravel
+recientes solo registraron errores anteriores al arranque; no se imprimieron
+sus mensajes.
+
+Para evitar que siguieran acumulándose healthchecks y procesos `octane:status`,
+se detuvo de forma normal únicamente el candidato (ID `d63f856b44a7`) con
+`docker stop --timeout 10`; código 0. La consulta final confirmó que tanto ese
+candidato como la app anterior y el contenedor de dependencias permanecen
+detenidos, sin eliminar contenedores ni volúmenes. La causa del arranque
+incompleto sigue sin demostrarse; no se modificó código ni configuración.
+Actualmente no hay una versión de la app sirviendo en 8080 y Vite no se inició.
+No se validaron login, assets/HMR, impresión, filtros ni CSV. Worker,
+scheduler y SSR estaban apagados en el candidato. Entregas 2 y 3 permanecen
+abiertas.
