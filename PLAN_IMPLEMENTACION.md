@@ -424,3 +424,48 @@ configurados como desactivados en el Compose; la inspección actual confirma
 SSR desactivado. HMR, assets actuales, impresión, descarga CSV y la inspección
 visual de Entrega 3 siguen pendientes; la Entrega 2 continúa abierta por la
 validación con proveedores reales.
+
+29-10-2026: Se recuperó la salida que seguía disponible del único intento de
+Composer, sin repetir la instalación. El comando ejecutado por el servicio
+`dependencies` fue `composer install --dev --no-interaction --no-scripts`.
+Terminó con código 1 por el timeout interno de Composer: `/usr/bin/unzip -qq
+/var/www/html/vendor/composer/tmp-6c8d9006848eaf25b913ee00cb78a1e.zip -d
+/var/www/html/vendor/composer/50a70b70` superó los 300 s (`Process.php`, línea
+1205), mientras Composer mostraba 47/53 extracciones (88 %). El resultado
+registró como fallidas las instalaciones de `phpunit/phpunit`,
+`phpstan/phpstan`, `rector/rector`, `fakerphp/faker`,
+`pestphp/pest-plugin-mutate` y `pestphp/pest`; la salida conservada no permite
+asociar con certeza el archivo ZIP temporal y el directorio hash a un paquete
+concreto. No se repitió la instalación para recuperar ese dato.
+
+El timeout anterior fue del proceso de extracción de Composer, no del límite
+de espera PowerShell: el comando exterior esperó hasta 900 s y recibió código
+1. Los timeouts posteriores de `ps`, `top` y del contenedor auxiliar sí fueron
+límites del diagnóstico PowerShell y no se interpretan como el mismo error.
+Las consultas cortas previas confirmaron el candidato Compose en estado
+`created`, con `/var/www/html/vendor` montado desde `shoutrrr_dev_vendor`, no
+desde el bind mount de Windows; la app anterior siguió saludable con los
+volúmenes persistentes. No se inició ese candidato con `APP_DEBUG` y
+`AUTORUN_ENABLED` habilitados.
+
+Una consulta read-only dentro de la app saludable mostró `984229020` bloques
+de 1 KiB disponibles en sus montajes overlay (aprox. 938 GiB); esto no mide el
+volumen dedicado `shoutrrr_dev_vendor`. El Composer que alcanzó 88 % demuestra
+avance de extracción hacia su ruta en `/var/www/html/vendor`, pero no hay una
+medición persistida de espacio libre ni una prueba concluyente de escritura
+directa sobre el volumen tras el fallo. Se intentó una sonda no destructiva
+separada sobre ese volumen; el CLI excedió 30 s, el contenedor auxiliar luego
+apareció como ausente y Docker respondió que ya estaba marcado para eliminarse.
+No se eliminó ni recreó ningún volumen.
+
+Después de la sonda, una consulta nominal confirmó que el contenedor auxiliar
+ya no existía, pero las nuevas consultas de contenedores del proyecto y
+procesos agotaron sus límites. Por ello no se certifica que no haya una tarea
+de preparación aún activa, aunque el servicio Composer ya había terminado con
+código 1 y no se observa ningún contenedor auxiliar persistente. No se inició
+otro Composer/Bun ni se arrancó el candidato. El servicio actual sigue sin
+Vite: la verificación previa dio HTTP 302 en `/accounts` y no hubo respuesta
+en 5173. Sin una consulta fiable del estado Docker ni de la capacidad del
+volumen, no se autoriza el único reintento con `COMPOSER_PROCESS_TIMEOUT`
+ampliado. Permanecen pendientes assets actuales, HMR, impresión, filtros,
+CSV y revisión visual; Entrega 3 sigue abierta.
