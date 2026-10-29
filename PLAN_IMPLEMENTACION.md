@@ -504,3 +504,29 @@ contenedor candidato sin iniciar y todos los volúmenes. Sin evidencia de
 finalización de la sonda, no se afirma que `vendor` esté completo o utilizable.
 Entrega 3 permanece abierta por assets/HMR, impresión, filtros y CSV; Entrega
 2 permanece abierta por validación de proveedores reales.
+
+29-10-2026, aclaración posterior de la sonda existente: se consultó una sola
+vez `docker inspect rsmanager-vendor-probe-10993b`; Docker respondió `no such
+object`. No había proceso `docker.exe` cuyo comando solicitara ese nombre.
+Los eventos locales de Docker para 11:00–11:14 (hora local) y las siete
+entradas locales de `AppData\Local\Docker\log\host\monitor.log.20261029-111240.024`
+acotan la secuencia: create/attach a las 11:06:38, start a las 11:07:00,
+`exec_die` con 137 a las 11:07:04, die del contenedor con código 0 a las
+11:07:12 y destroy a las 11:07:17. El log de host muestra creación completada
+y asignación de puertos, sin error de montaje o almacenamiento para ese
+nombre. El estado terminal del contenedor fue éxito; no corresponde describir
+el caso como un proceso que nunca inició ni como una falla de vendor.
+
+La sonda alcanzó a ejecutar el comando completo y terminó con código 0, por lo
+que sus verificaciones de directorio/montaje y escritura temporal seguida de
+eliminación terminaron correctamente. El cliente PowerShell, limitado a 20 s,
+no conservó stdout: se desconoce el valor numérico de espacio libre y la salida
+de presencia de autoload/metadata. Los eventos muestran que el start del
+contenedor llegó después de la consulta nominal que aún lo encontraba
+`Created`; esto es evidencia de ejecución Docker retrasada respecto del
+timeout del cliente y posterior finalización, no de una solicitud que siga
+pendiente ahora. No se repitió Docker run, Composer, build ni sonda. El único
+siguiente paso previsto será reanudar las dependencias con una espera de CLI
+mayor cuando se autorice continuar; no hace falta reiniciar Docker Desktop por
+esta evidencia. La app saludable, los datos y todos los volúmenes se
+mantuvieron intactos; no se validó aún Vite ni Entrega 3.
