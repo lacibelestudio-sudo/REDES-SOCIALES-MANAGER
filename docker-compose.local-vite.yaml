@@ -1,20 +1,19 @@
 # Local frontend iteration on top of the existing development image and data.
-# Start the app first (wait for it to become healthy), then start Vite:
-#   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build app
+# Start this named app instance first (wait for it to become healthy), then Vite:
+#   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml run -d --no-deps --service-ports --name rsmanager-app-local-vite app
 #   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build vite
 # Stop Vite without leaving Laravel pointed at a stale hot file:
 #   docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml stop vite
+# Stop the named local app instance:
+#   docker stop --timeout 10 rsmanager-app-local-vite
 services:
     app:
         image: shoutrrr:dev
         pull_policy: never
         command:
-            - /bin/bash
-            - -lc
-            - |
-                set -eu
-                php artisan storage:link --force --no-interaction
-                exec supervisord -c /etc/supervisor/laravel.conf
+            - supervisord
+            - -c
+            - /etc/supervisor/laravel.conf
         environment:
             APP_DEBUG: "false"
             AUTORUN_ENABLED: "false"

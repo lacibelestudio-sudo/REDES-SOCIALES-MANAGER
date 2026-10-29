@@ -622,3 +622,43 @@ Actualmente no hay una versión de la app sirviendo en 8080 y Vite no se inició
 No se validaron login, assets/HMR, impresión, filtros ni CSV. Worker,
 scheduler y SSR estaban apagados en el candidato. Entregas 2 y 3 permanecen
 abiertas.
+
+29-10-2026, recuperación del arranque local desde `966eb8a`:
+
+- La configuración efectiva apuntaba a `/etc/supervisor/laravel.conf`, igual
+  al archivo del repositorio verificado anteriormente. `[program:octane]`
+  ejecuta `php /var/www/html/artisan octane:start --server=frankenphp
+  --host=0.0.0.0 --port=8080`, con `autostart=true`; Supervisor hereda
+  `www-data` y `/var/www/html` del contenedor. No hay sección `[include]`;
+  stdout/stderr del programa van a `/dev/fd/1` y `/dev/fd/2`. Worker,
+  scheduler y SSR estaban configurados para quedar inactivos por sus variables.
+- `AUTORUN_ENABLED=false` evitó las instalaciones y tareas automáticas. El
+  script `99-debug-mode.sh` tampoco ejecutó Composer ni `optimize:clear`
+  porque `APP_DEBUG=false`. No se omitieron migraciones ni seeders necesarios:
+  no se ejecutó ninguno. El comando local repetía `php artisan storage:link`;
+  el registro mostraba el enlace creado, pero la última captura encontró el
+  shell aún en ese prepaso y no encontró Supervisor en el árbol de procesos.
+  El enlace `public/storage` ya existía. Se quitó esa repetición y se dejó que
+  el entrypoint de la imagen ejecute Supervisor directamente.
+- La prueba en primer plano del comando exacto de Octane inició FrankenPHP y
+  `/up` devolvió HTTP 200. Después del cambio, `rsmanager-app-local-vite`,
+  imagen `shoutrrr:dev` sin rebuild, quedó `healthy`: PID 1 es Supervisor,
+  Octane y FrankenPHP están activos y `/up` devuelve HTTP 200. Se conservaron
+  `shoutrrr_storage` y `shoutrrr_sqlite`. El contenedor anterior, detenido,
+  fue renombrado como `rsmanager-previous-app-426474c1` para preservar su capa
+  escribible; no se eliminó ni se iniciaron sus flags antiguos.
+- Vite se inició una sola vez tras confirmar libre el puerto 5173. Su
+  configuración fue `0.0.0.0:5173`, HMR `localhost`, y creó `public/hot`;
+  sin embargo, `node /var/www/html/node_modules/.bin/vite` quedó en estado
+  `Dl`, espera `folio_wait_bit_common`. La petición host a
+  `/@vite/client` venció tras 8 segundos sin bytes. Se detuvo solo
+  `shoutrrr-vite-1` (salida 137 tras el timeout de parada) y se comprobó que
+  ya estaba detenido antes de retirar el `public/hot` regular obsoleto. No se
+  repitió el arranque. No hay error de aplicación emitido ni evidencia para
+  atribuir la espera a memoria, disco o antivirus.
+- La respuesta HTTP del servicio está recuperada, pero sin Vite ni un
+  manifiesto `public/build/manifest.json` la página Inertia no se validó: la
+  prueba previa de `/posts/...` devolvió 500 por manifiesto ausente. Login
+  autenticado, assets/HMR, impresión, filtros, CSV y revisión visual quedan
+  pendientes. No se reconstruyó imagen, no se reinstalaron dependencias y no
+  se alteraron APP_KEY, usuarios ni datos. Entregas 2 y 3 siguen abiertas.
