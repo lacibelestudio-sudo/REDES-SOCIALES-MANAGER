@@ -379,3 +379,48 @@ volúmenes anónimos ya se retiraron; el punto de montaje vacío `vendor` tambi�
 se eliminó. Pendiente: credenciales, permisos y autorización OAuth reales,
 lecturas de métricas con cuentas autorizadas y validación del caso de
 publicación antes de cualquier envío.
+
+28-10-2026: Se revalidó el Compose combinado, incluido el perfil
+`local-dependencies`, con un proceso PowerShell que inicia `ReadToEndAsync()`
+para ambas salidas inmediatamente después de `Start()` y aplica un límite de
+20 s. La invocación correcta de
+`docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml --profile local-dependencies config --format json`
+terminó con código 0; una primera lectura no válida correspondió al wrapper
+de diagnóstico, no a Compose. No se imprimieron variables sensibles.
+
+`docker info` excedió su límite de 12 s, pero `docker ps` respondió con código
+0 y permitió confirmar que el motor no estaba totalmente inaccesible en ese
+momento. `inspect`, `logs --tail 30` y `top` también respondieron: la app
+original `shoutrrr-app-1` seguía `running/healthy`, publicada en 8080, usando
+solo los volúmenes persistentes `shoutrrr_storage` y `shoutrrr_sqlite`.
+`top` mostró supervisor, PHP y FrankenPHP. Los últimos 30 renglones de logs no
+contenían coincidencias de `error`, `exception`, `fatal` o `failed`; el
+contenedor candidato recién creado no tenía logs ni `StartedAt`. Ese candidato
+`426474c1ddc5_shoutrrr-app-1` estaba en estado `created`, con el bind mount del
+checkout y los volúmenes `shoutrrr_dev_vendor`/`shoutrrr_dev_node_modules`,
+pero conservaba `APP_DEBUG=true` y `AUTORUN_ENABLED=true`; no se inició. La
+configuración Compose actual define ambos como `false`. El contenedor de
+analítica previo seguía detenido.
+
+Se ejecutó una sola vez el servicio de dependencias mediante
+`docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml --profile local-dependencies run --rm dependencies`.
+Terminó con código 1. Composer estaba extrayendo archivos (88 % del lote de
+53) cuando el proceso `/usr/bin/unzip -qq ...` excedió el límite de Composer
+de 300 s (`Process.php`, línea 1205). No llegó a ejecutar descubrimiento de
+paquetes, generación Wayfinder ni Bun. El volumen `shoutrrr_dev_vendor` puede
+haber quedado parcialmente preparado; no se repitió la instalación ni se
+inició app/Vite. No se demostró si el contenedor `--rm` y el estado exacto de
+los volúmenes quedaron limpios: después del fallo, nuevas consultas acotadas
+de `ps`, `stats` e inspección de volúmenes excedieron 10-12 s. Estas demoras
+son timeouts de diagnóstico y no prueban por sí solas una caída total del
+motor.
+
+La app actual respondió `302` en `/accounts`; Vite no respondió en el puerto
+5173. La consulta de recursos del host también se detuvo antes de producir
+resultados. Por tanto no hay evidencia para atribuir el límite de extracción a
+falta de memoria o espacio. No se recrearon servicios, se cambió la imagen, se
+tocaron datos o volúmenes, ni se reinició Docker. Workers y scheduler siguen
+configurados como desactivados en el Compose; la inspección actual confirma
+SSR desactivado. HMR, assets actuales, impresión, descarga CSV y la inspección
+visual de Entrega 3 siguen pendientes; la Entrega 2 continúa abierta por la
+validación con proveedores reales.
