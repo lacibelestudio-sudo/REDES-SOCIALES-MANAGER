@@ -662,3 +662,38 @@ abiertas.
   autenticado, assets/HMR, impresión, filtros, CSV y revisión visual quedan
   pendientes. No se reconstruyó imagen, no se reinstalaron dependencias y no
   se alteraron APP_KEY, usuarios ni datos. Entregas 2 y 3 siguen abiertas.
+
+29-10-2026, recuperación de navegación desde `1c10aba`:
+
+- Se reprodujo una sola carga autenticada de `/posts/01a17947-e2ce-7127-ab9c-5c17b6ad4c90`;
+  el último error Laravel fue `Illuminate\Foundation\ViteManifestNotFoundException`
+  para `/var/www/html/public/build/manifest.json`. `public/build` y el manifest
+  faltaban tanto en el checkout como en el contenedor. Esto confirma que el
+  bind mount del checkout ocultaba los assets disponibles solo en la imagen.
+- Se ejecutó una vez `bun run build` en el contenedor de app con los volúmenes
+  existentes, sin instalación ni rebuild. Terminó con código 0 usando Vite
+  8.3.4. El manifest se creó a las 17:47 y las entradas de app, CSS y
+  dashboard apuntan a archivos existentes. El checkout montado contiene 148
+  archivos en `public/build`; los bundles actuales incluyen
+  `app-Bv_wTgCe.js`, `app-DwCDEfAc.css` y `dashboard-BgpxHoaG.js`.
+- `/dashboard` respondió en el navegador ya autenticado; la vista renderizó
+  navegación y contenido normal. `/login` respondió HTTP 200 a una petición
+  sin sesión. La página autenticada de post volvió a renderizarse y cargó los
+  bundles actuales. Las respuestas HTTP de los tres assets JS/CSS probados
+  fueron 200. No aparecieron errores de consola en la lectura reciente del
+  navegador. La respuesta curl no autenticada a `/dashboard` fue 302, como
+  corresponde a la ruta protegida; no se usó como validación visual.
+- Vite se probó después por separado. Su log llegó a indicar `ready` tras
+  95723 ms, pero las peticiones a `localhost:5173/@vite/client` dieron primero
+  respuesta vacía y después las consultas a procesos/logs y el CLI de parada
+  de `shoutrrr-vite-1` quedaron sin respuesta. Se cancelaron esos clientes
+  bloqueados; esto no acredita que el motor haya detenido el servicio. En la
+  última lectura disponible `public/hot` estaba ausente, pero no se pudo
+  confirmar el estado final del contenedor ni HMR. No se atribuye la demora a
+  una causa raíz. No tocar `public/hot` ni afirmar que Vite está detenido
+  hasta consultar el estado de ese servicio.
+- La navegación autenticada está recuperada con assets construidos desde el
+  checkout de `1c10aba`; no son bundles de la imagen anterior. El build generó
+  archivos ignorados, no cambios rastreados. No se reconstruyó la imagen ni
+  cambiaron APP_KEY, usuarios, datos o volúmenes. Impresión, filtros y CSV
+  siguen sin validarse; Entrega 3 permanece abierta.
