@@ -8,8 +8,16 @@ services:
     app:
         image: shoutrrr:dev
         pull_policy: never
-        command: ["supervisord", "-c", "/etc/supervisor/laravel.conf"]
+        command:
+            - /bin/bash
+            - -lc
+            - |
+                set -eu
+                php artisan storage:link --force --no-interaction
+                exec supervisord -c /etc/supervisor/laravel.conf
         environment:
+            APP_DEBUG: "false"
+            AUTORUN_ENABLED: "false"
             QUEUE_WORKER_ENABLED: "false"
             SCHEDULER_ENABLED: "false"
             INERTIA_SSR_ENABLED: "false"
@@ -17,6 +25,30 @@ services:
             - .:/var/www/html:cached
             - dev-vendor:/var/www/html/vendor
             - dev-node-modules:/var/www/html/node_modules
+
+    dependencies:
+        profiles: ["local-dependencies"]
+        image: shoutrrr:dev
+        pull_policy: never
+        working_dir: /var/www/html
+        entrypoint: []
+        volumes:
+            - .:/var/www/html:cached
+            - dev-vendor:/var/www/html/vendor
+            - dev-node-modules:/var/www/html/node_modules
+        command:
+            - /bin/bash
+            - -lc
+            - |
+                set -eu
+                composer install --dev --no-interaction --no-scripts
+                php artisan package:discover --ansi
+                php artisan wayfinder:generate --with-form --no-interaction
+                bun install --frozen-lockfile
+                test -f vendor/autoload.php
+                test -x node_modules/.bin/vite
+                bun run vite --version
+                printf '%s\n' 'Local Composer and Bun dependencies are ready.'
 
     vite:
         image: shoutrrr:dev
@@ -39,7 +71,6 @@ services:
             - |
                 set -eu
                 rm -f public/hot
-                bun install --frozen-lockfile
                 bun run dev -- --host "$$VITE_HOST" --port "$$VITE_PORT" --strictPort &
                 vite_pid=$$!
                 trap 'kill "$$vite_pid" 2>/dev/null || true; wait "$$vite_pid" 2>/dev/null || true; rm -f public/hot' EXIT INT TERM

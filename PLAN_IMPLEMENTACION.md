@@ -247,7 +247,12 @@ el override explícito `docker-compose.local-vite.yaml` sobre esa base: conserva
 imagen, proyecto, puerto 8080 y volúmenes persistentes; monta el checkout,
 protege `vendor` y `node_modules` con volúmenes separados y comparte
 `public/hot` a través del bind mount del código. No contiene migraciones ni
-seeders y desactiva cola, scheduler y SSR.
+seeders y desactiva cola, scheduler y SSR. La primera versión de este override
+dejó el entrypoint de depuración activo y además instalaba dependencias en cada
+arranque de Vite; se corrigió para desactivar APP_DEBUG y AUTORUN, conservar el
+entrypoint de Serversideup, ejecutar solo `storage:link` idempotente antes de
+supervisord, y mover Composer/Bun a un servicio de preparación explícito y
+secuencial.
 
 El Dockerfile instala Composer con dependencias de desarrollo para generar
 Wayfinder y luego vuelve a instalar sin dependencias dev para `vendor/` final.
@@ -257,18 +262,45 @@ defecto. El entrypoint del servidor ejecuta `composer install --dev` y
 de storage y el archivo SQLite si falta. Estos efectos se mantienen bajo el
 override, sin migrar, sembrar ni reemplazar una base existente.
 
-El procedimiento preparado es iniciar primero `app` con `--no-build`, esperar
-su healthcheck y luego iniciar Vite con el mismo override. Bun se ejecuta
-después del Composer del entrypoint, no en paralelo sobre los mismos
-directorios. Vite escucha en `0.0.0.0:5173` y anuncia `localhost:5173` al
-navegador. Al arrancar y al cerrar, elimina `public/hot`. Para volver al modo
-de imagen, detener Vite con `docker compose -p shoutrrr
--f docker-compose.development.yaml -f docker-compose.local-vite.yaml stop vite`
-y recrear solo `app` desde el Compose base manteniendo worker y scheduler
-apagados:
-`$env:QUEUE_WORKER_ENABLED='false'; $env:SCHEDULER_ENABLED='false'; $env:INERTIA_SSR_ENABLED='false'; docker compose -p shoutrrr -f docker-compose.development.yaml up -d --no-build --force-recreate app`.
-No iniciar workers/scheduler hasta autorizarlo. No se modifican `.env`, APP_KEY,
-usuarios, contraseñas ni datos.
+El procedimiento reproducible preparado, una vez que Docker vuelva a responder
+de forma estable, es:
+
+1. Preparar `vendor` y `node_modules` una sola vez (o al cambiar sus lockfiles),
+   en secuencia dentro del único servicio de dependencias:
+   `docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml --profile local-dependencies run --rm dependencies`.
+   Respeta `composer.lock` y `bun.lock`; ejecuta Composer, descubrimiento de
+   paquetes, generación Wayfinder y Bun de forma secuencial, y verifica
+   `vendor/autoload.php`, `node_modules/.bin/vite` y la versión de Vite. Los
+   volúmenes no usan `nocopy`: al montarlos por primera vez Docker copia el
+   contenido de `vendor/` y `node_modules/` de la imagen si están vacíos; luego
+   los comandos sincronizan las dependencias bloqueadas. Generar Wayfinder y
+   los paquetes es necesario porque el bind mount oculta los directorios
+   generados/ignorados que sí existen en la imagen. No ejecutar este servicio en
+   paralelo con `app` o `vite`.
+2. Iniciar solo la app, sin build, y esperar health:
+   `docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build app`.
+   Conserva APP_KEY, configuración y datos; `APP_DEBUG=false` omite el script
+   que instala Composer y ejecuta `optimize:clear`; `AUTORUN_ENABLED=false`
+   evita tareas automáticas de caché/enlace. El entrypoint sigue ejecutando
+   `10-init-app.sh` (directorios de storage y SQLite solo si falta) y
+   `99-debug-mode.sh` se salta por APP_DEBUG. El comando realiza únicamente el
+   enlace de storage necesario antes de iniciar supervisord.
+3. Iniciar Vite después de comprobar el health de la app:
+   `docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml up -d --no-build vite`.
+   Vite escucha en `0.0.0.0:5173` y anuncia `localhost:5173` al navegador. No
+   instala dependencias al reiniciarse. Su trap elimina `public/hot` al parar;
+   si termina con SIGKILL o abruptamente, ejecutar primero
+   `docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml exec app rm -f public/hot`
+   antes de servir la imagen compilada.
+4. Para retornar al modo de imagen, detener Vite, limpiar `public/hot` si no
+   puede detenerse normalmente y recrear solo `app` con el Compose base
+   (`QUEUE_WORKER_ENABLED=false`, `SCHEDULER_ENABLED=false` y
+   `INERTIA_SSR_ENABLED=false` conservados en el entorno del comando):
+   `docker compose -p shoutrrr -f docker-compose.development.yaml -f docker-compose.local-vite.yaml stop vite`
+   y
+   `$env:QUEUE_WORKER_ENABLED='false'; $env:SCHEDULER_ENABLED='false'; $env:INERTIA_SSR_ENABLED='false'; docker compose -p shoutrrr -f docker-compose.development.yaml up -d --no-build --force-recreate app`.
+   No iniciar workers/scheduler hasta autorización. No se modifican `.env`,
+   APP_KEY, usuarios, contraseñas ni datos.
 
 Cobertura de la corrección: se añadió una prueba Vitest focalizada para la
 ruta `/analytics/print` con filtros, el dashboard normal y el cableado de las
@@ -277,31 +309,45 @@ clases print-only al layout. Las pruebas existentes de `app-sidebar` y
 prueba no se ejecutó por falta de un runner disponible; los controles previos
 aprobados pertenecen al candidato anterior y no validan este cambio.
 
-La configuración combinada pasó `docker compose config --format json` (código
-0), sin imprimir valores secretos. Se compararon en memoria la APP_KEY y
-configuración de DB/URL con el contenedor existente; los valores coincidían.
-El puerto 5173 estaba libre y se confirmó que no hay migración ni seeder en el
-comando efectivo. Al ejecutar únicamente `up -d --no-build app`, Docker creó
-los volúmenes de dependencias `shoutrrr_dev_vendor` y
-`shoutrrr_dev_node_modules`, pero la operación quedó bloqueada en
-`Container shoutrrr-app-1 Recreate` durante unos 11 minutos. Se detuvo solo el
-CLI de Compose; una consulta limitada de `docker inspect` después agotó 10 s.
-No se ejecutó el servicio Vite ni un build. La sesión de navegador siguió
-mostrando la pantalla autenticada anterior, sin assets servidos desde el puerto
-5173; no demuestra que la recreación local haya terminado. No se lanzó otra
-llamada Docker. El estado de contenedor/health y los overrides efectivos tras
-el intento quedan sin confirmar; antes del intento estaban saludables con
-worker, scheduler y SSR apagados y volúmenes persistentes intactos.
+La primera configuración combinada pasó `docker compose config --format json`
+(código 0), sin imprimir secretos. APP_KEY y configuración de DB/URL coincidían
+en memoria con el contenedor anterior. El puerto 5173 estaba libre. El primer
+`up -d --no-build app` se bloqueó al recrear el servicio y Docker creó los
+volúmenes nuevos `shoutrrr_dev_vendor` y `shoutrrr_dev_node_modules`. Una
+comprobación posterior `docker ps -a` mostró solo el antiguo `shoutrrr-app-1`
+(healthy, imagen
+`sha256:3aadbfd3d4b59d6f3ccdcc4e5588ff06764ab7155fdc69833df231d22b1dc466`,
+creado antes del intento) y un contenedor de pruebas ya detenido; no existían
+contenedor Vite ni reemplazo de app. `docker inspect` confirmó que sigue usando
+el entrypoint estándar y solo el Compose base. La recreación no se completó.
+Los volúmenes de dependencias existen, pero ningún contenedor exitoso los montó
+todavía; su contenido no se inspeccionó y no se presume completo. `docker top`
+y `docker logs --tail 60` agotaron cada uno 10 s, así que no se pudo confirmar
+actividad Composer/Bun ni leer logs de arranque.
+
+Después de corregir el override para separar dependencias y no repetir
+Composer/Bun en cada arranque, una sola validación acotada de
+`docker compose ... --profile local-dependencies config --format json` se
+bloqueó a los 15 s. No se ha comprobado la configuración efectiva corregida ni
+se lanzó otro `up`, el servicio `dependencies` o Vite. Dado que Docker responde
+a `ps`/`inspect` pero cuelga en `top`, logs, Compose y config, el motor no se
+considera estable para una recreación segura. No se reinicia Docker Desktop
+porque hay otros servicios activos; no se borraron imágenes, cachés ni
+volúmenes. La pantalla autenticada anterior de Accounts no acredita el
+candidato local ni HMR.
 
 La corrección incluye un helper de detección de `/analytics/print` y pruebas
 para el dashboard normal, la ruta de reporte con filtros y la conexión de esa
 condición con las clases print-only del layout. No se pudieron ejecutar
 formato, lint, TypeScript ni Vitest: el host carece de Bun/Node y el motor
 Docker dejó de responder durante la recreación. VS Code no registró un
-controlador de tests, así que su intento focalizado no ejecutó pruebas.
-Impresión, CSV descargado y pantallas de conexiones/compositor siguen sin
-validación con el candidato final. La Entrega 3 permanece abierta; tampoco se
-afirma que el cambio esté incluido en una imagen reconstruida.
+controlador de tests, así que su intento focalizado no ejecutó pruebas. No se
+pudo validar el override corregido con Compose; dependencies/Vite no se
+iniciaron, los volúmenes de dependencias siguen sin inspeccionar y no se
+confirmó copia inicial de contenidos de imagen. Impresión, CSV descargado y
+pantallas de conexiones/compositor siguen sin validación con el candidato
+final. La Entrega 3 permanece abierta; tampoco se afirma que el cambio esté
+incluido en una imagen reconstruida.
 
 26-10-2026: Entregas 0 y 1 integradas localmente sobre `main` (base
 `28bbc7f`). Pest focalizado pasó (20 tests, 294 assertions, SQLite en memoria).
