@@ -729,3 +729,30 @@ abiertas.
   `rsmanager-app-local-vite` y solicitar asistencia con una sola acción si
   Docker Desktop sigue sin responder. No reiniciar Docker/WSL mientras haya
   otros proyectos activos.
+
+29-10-2026 21:52 -05:00, continuación desde `c29f48b`:
+
+- La inspección acotada, con stdout/stderr capturados mediante
+  `ReadToEndAsync()`, confirmó `shoutrrr-vite-1` y
+  `rsmanager-app-local-vite` en estado `exited`, ambos con exit code 255 y
+  `FinishedAt=2026-10-30T01:55:06Z`. No se consultaron variables de entorno ni
+  se expusieron secretos. Vite está detenido; `public/hot` era un archivo
+  regular y se retiró solo después de confirmar el estado `exited`.
+- `docker logs --timestamps --tail 100 rsmanager-app-local-vite` agotó su
+  límite de 20 segundos sin stdout/stderr recuperable.
+  `docker start rsmanager-app-local-vite` se ejecutó una única vez y agotó
+  sus 30 segundos, también sin salida. La inspección posterior confirmó que
+  la app continuó `exited|255`, con el mismo `StartedAt` previo y sin mensaje
+  de error. No se repitió `start`, `compose up` ni se creó otro contenedor.
+- No es un error de arranque Laravel demostrado: el resultado observado es
+  una petición de start que no completó y una app que permanece detenida; la
+  salida final del contenedor no pudo recuperarse porque `docker logs` venció.
+  `/up`, `/login` y los assets no se pudieron comprobar y no se consultó el
+  navegador mientras el servicio está caído. El manifest y los bundles del
+  build previo se conservan en el checkout.
+- Acción manual única necesaria: en Docker Desktop, usar **Start** únicamente
+  para el contenedor existente `rsmanager-app-local-vite` y verificar que
+  pase a `Running`. No iniciar Vite, no usar `Compose up`, no reiniciar
+  Docker/WSL ni tocar otros proyectos. Después de esa comprobación se puede
+  validar HTTP y abrir el explorador. Las validaciones funcionales de
+  filtros, impresión y CSV y HMR siguen pendientes.
