@@ -697,3 +697,35 @@ abiertas.
   archivos ignorados, no cambios rastreados. No se reconstruyó la imagen ni
   cambiaron APP_KEY, usuarios, datos o volúmenes. Impresión, filtros y CSV
   siguen sin validarse; Entrega 3 permanece abierta.
+
+29-10-2026 21:45 -05:00, continuación desde `6c65ca3`:
+
+- Se conservó el build compilado: `public/build/manifest.json` está presente.
+  No se reinstalaron dependencias, reconstruyeron imágenes ni volvió a
+  iniciarse Vite en esta ronda.
+- El chequeo HTTP actual a `/login` no conectó en `localhost:8080` (curl
+  exit 7). El chequeo a `localhost:5173/@vite/client` expiró (curl exit 28).
+  Esto contrasta con la navegación anterior verificada; ahora el servicio no
+  puede darse por desplegado ni disponible en el explorador.
+- Una consulta única con lectura asíncrona de stdout/stderr a
+  `docker inspect shoutrrr-vite-1` excedió 15 segundos. No se solicitó `stop`
+  porque el estado real no quedó confirmado; cancelar el cliente no prueba
+  que Docker detuviera el contenedor. No quedó ningún proceso CLI Docker de
+  esta tarea en ejecución en la comprobación de procesos.
+- `public/hot` volvió a existir como archivo regular con contenido
+  `http://localhost:5173`. No se eliminó porque no se pudo confirmar que
+  `shoutrrr-vite-1` estuviera detenido. Los bundles compilados siguen
+  presentes, pero no se pueden probar páginas/activos mientras 8080 no
+  responda.
+- No se pudieron completar verificaciones visuales de login, dashboard,
+  post, filtros, paridad de impresión/CSV, impresión ni descarga CSV; tampoco
+  inspección de consola en esta sesión porque no hay una página del navegador
+  compartida y la aplicación local no responde. No se añadieron datos de
+  prueba ni se tocaron APP_KEY, usuarios, datos, volúmenes, worker, scheduler
+  o SSR. HMR sigue pendiente por separado y Entrega 3 continúa abierta.
+- Próximo paso: en Docker Desktop, inspeccionar solo `shoutrrr-vite-1`; si
+  figura activo, detener ese contenedor y esperar su estado `Exited`. Luego
+  confirmar que `public/hot` no existe, comprobar el estado de
+  `rsmanager-app-local-vite` y solicitar asistencia con una sola acción si
+  Docker Desktop sigue sin responder. No reiniciar Docker/WSL mientras haya
+  otros proyectos activos.
