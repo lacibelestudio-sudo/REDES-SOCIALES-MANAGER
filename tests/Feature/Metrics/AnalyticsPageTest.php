@@ -48,6 +48,10 @@ beforeEach(function (): void {
     Context::add('workspace_id', $this->workspace->id);
 });
 
+afterEach(function (): void {
+    Date::setTestNow();
+});
+
 test('analytics page renders with accounts and range', function (): void {
     $this->actingAs($this->user)
         ->get(route('analytics.index'))
@@ -103,6 +107,18 @@ test('no connected accounts reports missing measurements and a known zero post c
             ->where('summary.engagement.coverage.total', 0)
             ->where('summary.posts.value', 0)
             ->where('summary.posts.delta', 0));
+
+    $csv = $this->actingAs($this->user)
+        ->get(route('analytics.export.csv'))
+        ->assertOk()
+        ->assertHeader('content-type', 'text/csv; charset=UTF-8')
+        ->streamedContent();
+
+    expect($csv)
+        ->toContain("section,field,value,measured,total\n")
+        ->toContain("summary,followers,,0,0\n")
+        ->toContain("summary,engagement,,0,0\n")
+        ->toContain("summary,published_posts,0\n");
 });
 
 test('an account without readings is not represented as zero followers', function (): void {
@@ -376,7 +392,7 @@ test('analytics queries remain isolated to the active workspace', function (): v
 test('combined platform and account filters stay consistent across screen print and CSV', function (): void {
     $account = ConnectedAccount::factory()->for($this->workspace)->create([
         'platform' => Platform::Instagram->value,
-        'handle' => '@=HYPERLINK("https://example.invalid","profile"),line'."\n".'next',
+        'handle' => '@=HYPERLINK("https://example.invalid","profile"),línea'."\n".'siguiente',
     ]);
     $otherAccount = ConnectedAccount::factory()->for($this->workspace)->create([
         'platform' => Platform::X->value,
@@ -456,18 +472,36 @@ test('combined platform and account filters stay consistent across screen print 
             ->where('posts.0.id', $post->id)
             ->has('definitions', 3));
 
-    $csv = $this->get(route('analytics.export.csv', $query))
+    $csvResponse = $this->get(route('analytics.export.csv', $query))
         ->assertOk()
-        ->assertHeader('content-type', 'text/csv; charset=UTF-8')
-        ->streamedContent();
+        ->assertHeader('content-type', 'text/csv; charset=UTF-8');
+    $csv = $csvResponse->streamedContent();
 
-    expect($csv)->toContain($account->id)
+    expect($csvResponse->headers->get('content-disposition'))
+        ->toContain('attachment')
+        ->toContain('.csv');
+
+    expect($csv)->toContain("section,field,value,measured,total\n")
+        ->toContain('report,period_start,')
+        ->toContain('report,period_end,')
+        ->toContain('report,platform,instagram')
+        ->toContain('report,account_id,'.$account->id)
+        ->toContain('report,timezone,UTC')
+        ->toContain('summary,followers,0,1,1')
+        ->toContain('summary,engagement,0,1,1')
+        ->toContain('summary,published_posts,1')
+        ->toContain('línea')
+        ->toContain($account->id)
         ->toContain($post->id)
         ->toContain('\'@=HYPERLINK')
         ->toContain('""https://example.invalid""')
-        ->toContain("\nnext\"")
+        ->toContain("\nsiguiente\"")
         ->not->toContain($otherAccount->id)
         ->not->toContain($otherPost->id);
+
+    expect(preg_match('/^report,period_start,\d{4}-\d{2}-\d{2}T/m', $csv))->toBe(1)
+        ->and(preg_match('/^report,period_end,\d{4}-\d{2}-\d{2}T/m', $csv))->toBe(1)
+        ->and(preg_match('/^report,generated_at,\d{4}-\d{2}-\d{2}T/m', $csv))->toBe(1);
 });
 
 test('analytics report rejects account ids from another workspace on every endpoint', function (): void {
@@ -619,6 +653,7 @@ test('discord accounts are excluded from follower analytics', function (): void 
 });
 
 test('the follower series is downsampled to one point per day', function (): void {
+    Date::setTestNow('2026-03-10T12:00:00Z');
     $account = ConnectedAccount::factory()->for($this->workspace)->create();
     $previousDay = Date::now()->subDay()->startOfDay();
 

@@ -1,11 +1,10 @@
 # Contrato de métricas y reportes
 
-Estado: contrato de métricas de la Entrega 1 y filtros/reportes de la Entrega 3
-implementados. La inspección autenticada detectó un defecto en el diseño de
-impresión; su corrección está versionada, pero sin validar ni desplegar. El
-servicio local volvió a responder saludable con la imagen anterior; la Entrega
-3 sigue abierta hasta completar controles, build y revisión visual/CSV. Las
-ampliaciones de BI posteriores siguen siendo propuestas.
+Estado: criterios de la Entrega 1 y filtros/reportes de la Entrega 3
+implementados y validados con pruebas aisladas y una sesión local autenticada.
+La instancia local no contiene cuentas conectadas ni posts del workspace; la
+validación con métricas reales de proveedores sigue pendiente en la Entrega 2.
+Las ampliaciones de BI posteriores siguen siendo propuestas.
 
 ## Datos mínimos
 
@@ -85,17 +84,22 @@ Sin métricas válidas se muestra «Sin datos»; una lectura válida cero muestr
 
 ## Evidencia de implementación
 
-Las pruebas focalizadas del candidato anterior pasaron: Pest (`70 tests, 571
-assertions`), Vitest (7 pruebas de analytics), TypeScript, Oxfmt, Oxlint (0
-warnings, 0 errors), Pint y Larastan/PHPStan nivel 7. Las pruebas aisladas
-cubren filtros combinados, límites de fecha y zona horaria, acceso entre
-workspaces, estados sin datos/cero/cobertura parcial y CSV con fórmulas
-potenciales, comillas y saltos de línea. La inspección autenticada confirmó
-filtros y metadatos en analítica/reporte, pero reveló que el encabezado y la
-barra lateral aparecen en impresión. Solo se confirmó que el enlace CSV
-conserva los filtros; no se comprobó su respuesta ni contenido. La corrección
-local del layout aún no tiene controles de frontend aprobados y no se desplegó:
-el build se bloqueó al exportar capas y Docker dejó temporalmente de responder.
-Una comprobación posterior confirmó que el servicio está saludable en la imagen
-anterior; el candidato corregido no está desplegado. Por tanto, los resultados
-previos no certifican el candidato corregido ni su despliegue.
+Pest pasó `23 tests, 395 assertions` en el contenedor aislado sin acceso a la
+base persistente; Vitest pasó `13 tests`. Los fixtures cubren filtros
+combinados en dashboard/reporte/CSV, aislamiento por workspace, límites de
+fecha y zona horaria, diferencia entre `null` y cero, cobertura parcial y
+exportación CSV con UTF-8, comillas, saltos de línea y protección frente a
+fórmulas. TypeScript, Oxfmt, Oxlint, Pint y el análisis PHPStan focalizado
+pasaron. El análisis completo `composer types:check` excedió su timeout de
+300 segundos con 374 de 545 archivos analizados; el entorno informó menos de
+100 MiB libres en `/tmp`, por lo que ese control global queda registrado como
+inconcluso y no se atribuye a un defecto del código.
+
+El build frontend actual produjo un manifest con 146 entradas y 154 archivos
+referenciados presentes. La sesión local autenticada cargó el bundle nuevo sin
+errores de consola. Dashboard, reporte imprimible y endpoint CSV respondieron
+HTTP 200 con los mismos filtros. El CSV respondió con `text/csv; charset=UTF-8`
+y `Content-Disposition`. Al imprimir se ocultaron navegación y controles de la
+aplicación. El reporte usa resúmenes y tablas, no gráficos; el workspace vacío
+no permite observar series en el dashboard, así que no se añadieron datos
+sintéticos a la base activa.

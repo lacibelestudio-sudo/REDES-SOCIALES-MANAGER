@@ -1,0 +1,63 @@
+name: rsmanager-testing
+
+services:
+    tests:
+        profiles: ["testing"]
+        image: shoutrrr:dev
+        pull_policy: never
+        network_mode: none
+        working_dir: /var/www/html
+        entrypoint: []
+        command:
+            - /bin/sh
+            - -lc
+            - |
+                mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs storage/app/private
+                exec vendor/bin/pest --compact --cache-directory=/tmp/rsmanager-phpunit-cache
+        environment:
+            APP_ENV: testing
+            APP_CONFIG_CACHE: /tmp/rsmanager-testing-config.php
+            APP_DEBUG: "false"
+            APP_KEY: "base64:VFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFU="
+            DB_CONNECTION: sqlite
+            DB_DATABASE: ":memory:"
+            DB_URL: ""
+            CACHE_STORE: array
+            SESSION_DRIVER: array
+            QUEUE_CONNECTION: sync
+            MAIL_MAILER: array
+            QUEUE_WORKER_ENABLED: "false"
+            SCHEDULER_ENABLED: "false"
+            INERTIA_SSR_ENABLED: "false"
+        volumes:
+            - type: bind
+              source: .
+              target: /var/www/html
+              read_only: true
+            - type: bind
+              source: ./tests/Fixtures/empty-testing.env
+              target: /var/www/html/.env
+              read_only: true
+            - type: volume
+              source: dev-vendor
+              target: /var/www/html/vendor
+              read_only: true
+            - type: volume
+              source: dev-node-modules
+              target: /var/www/html/node_modules
+              read_only: true
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,size=512m
+            - /var/www/html/node_modules/.vite-temp:rw,noexec,nosuid,size=16m,mode=1777
+            - /var/www/html/node_modules/.vite:rw,noexec,nosuid,size=32m,mode=1777
+            - /var/www/html/database/sqlite:rw,noexec,nosuid,size=32m
+            - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m
+            - /var/www/html/storage:rw,noexec,nosuid,size=64m
+
+volumes:
+    dev-vendor:
+        external: true
+        name: shoutrrr_dev_vendor
+    dev-node-modules:
+        external: true
+        name: shoutrrr_dev_node_modules

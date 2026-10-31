@@ -229,6 +229,10 @@ export default function AnalyticsIndex({
     const rangeLabel =
         RANGE_OPTIONS.find((opt) => opt.days === analyticsFilters.days)
             ?.label ?? `${analyticsFilters.days}d`;
+    const hasActiveFilters =
+        analyticsFilters.days !== 90 ||
+        analyticsFilters.platform !== null ||
+        analyticsFilters.account_id !== null;
 
     return (
         <>
@@ -326,6 +330,18 @@ export default function AnalyticsIndex({
                         >
                             Apply filters
                         </button>
+                        {hasActiveFilters && (
+                            <Link
+                                href={
+                                    analyticsRoute({
+                                        query: { days: 90 },
+                                    }).url
+                                }
+                                className="h-10 rounded-lg border border-border px-4 text-sm leading-10 font-medium hover:bg-muted"
+                            >
+                                Reset filters
+                            </Link>
+                        )}
                         <p className="text-sm text-muted-foreground">
                             {analyticsFilters.from} – {analyticsFilters.to} (
                             {analyticsFilters.timezone})

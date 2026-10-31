@@ -117,3 +117,13 @@ describe('analytics range switching', () => {
         expect(source).toContain('only={RANGE_RELOAD_PROPS}');
     });
 });
+
+describe('analytics filter reset', () => {
+    it('resets the period, platform, and account to the default view', () => {
+        expect(source).toContain('analyticsFilters.days !== 90');
+        expect(source).toContain('analyticsFilters.platform !== null');
+        expect(source).toContain('analyticsFilters.account_id !== null');
+        expect(source).toContain('query: { days: 90 }');
+        expect(source).toContain('Reset filters');
+    });
+});

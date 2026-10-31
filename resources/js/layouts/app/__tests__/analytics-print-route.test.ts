@@ -23,12 +23,12 @@ describe('analytics print route detection', () => {
     });
 
     it('applies print-only hiding to the report shell and keeps normal shell classes', () => {
-        expect(layoutSource).toContain("isAnalyticsPrintRoute(usePage().url)");
+        expect(layoutSource).toContain('isAnalyticsPrintRoute(usePage().url)');
         expect(layoutSource).toContain(
             "wrapperClassName={isPrintReport ? 'print:hidden' : undefined}",
         );
         expect(layoutSource).toContain(
-            'className={isPrintReport ? \'print:hidden\' : undefined}',
+            "className={isPrintReport ? 'print:hidden' : undefined}",
         );
         expect(layoutSource).toContain("'overflow-x-hidden'");
     });
