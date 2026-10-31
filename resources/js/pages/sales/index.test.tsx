@@ -33,11 +33,30 @@ const lead = {
     campaign_name: campaign.name,
 };
 
+const leadSummary = {
+    new: 0,
+    qualified: 1,
+    opportunity: 0,
+    won: 0,
+    lost: 0,
+};
+
 describe('SalesIndex', () => {
     it('shows UTM values and commercial stages as internal records', () => {
-        render(<SalesIndex campaigns={[campaign]} leads={[lead]} canManage />);
+        render(
+            <SalesIndex
+                campaigns={[campaign]}
+                leads={[lead]}
+                leadSummary={leadSummary}
+                canManage
+            />,
+        );
 
         expect(screen.getByText('Campaigns and leads')).toBeInTheDocument();
+        expect(screen.getByText('Lead records by stage')).toBeInTheDocument();
+        expect(
+            screen.getByText(/not deduplicated people/i),
+        ).toBeInTheDocument();
         expect(screen.getByDisplayValue('newsletter')).toBeInTheDocument();
         expect(
             screen.getByDisplayValue('synthetic@example.test'),
@@ -55,6 +74,7 @@ describe('SalesIndex', () => {
             <SalesIndex
                 campaigns={[campaign]}
                 leads={[lead]}
+                leadSummary={leadSummary}
                 canManage={false}
             />,
         );
@@ -68,7 +88,14 @@ describe('SalesIndex', () => {
     });
 
     it('requires confirmation before deleting a campaign', () => {
-        render(<SalesIndex campaigns={[campaign]} leads={[]} canManage />);
+        render(
+            <SalesIndex
+                campaigns={[campaign]}
+                leads={[]}
+                leadSummary={leadSummary}
+                canManage
+            />,
+        );
         fireEvent.click(
             screen.getByRole('button', { name: 'Delete campaign' }),
         );

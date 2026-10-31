@@ -37,6 +37,10 @@ test('posting a stashed page selection creates a facebook connected account and 
 
     expect(Platform::launchedMetaGraphPlatforms())->toBe([Platform::Facebook, Platform::Instagram]);
 
+    Http::fake([
+        'https://graph.facebook.com/*/conversations*' => Http::response(['data' => []]),
+    ]);
+
     test()->withSession(['accounts.meta.connect' => [
         'assets' => [
             'PAGE1' => [

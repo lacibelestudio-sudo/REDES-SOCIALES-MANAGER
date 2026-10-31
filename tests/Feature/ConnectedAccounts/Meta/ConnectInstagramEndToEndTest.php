@@ -40,6 +40,10 @@ test('posting a stashed page selection creates an instagram connected account an
 
     expect(Platform::launchedMetaGraphPlatforms())->toBe([Platform::Facebook, Platform::Instagram]);
 
+    Http::fake([
+        'https://graph.facebook.com/*/conversations*' => Http::response(['data' => []]),
+    ]);
+
     test()->withSession(['accounts.meta.connect' => [
         'assets' => [
             'PAGE1' => [
@@ -66,7 +70,11 @@ test('posting a stashed page selection creates an instagram connected account an
         ->and($account->handle)->toBe('@myig')
         ->and($account->auth_method)->toBe('oauth')
         // dm_enabled mirrors the instance opt-in, which ships on by default.
-        ->and($account->capabilities)->toBe(['page_id' => 'PAGE1', 'dm_enabled' => true])
+        ->and($account->capabilities)->toBe([
+            'page_id' => 'PAGE1',
+            'dm_enabled' => true,
+            'instagram_account_type' => 'unknown',
+        ])
         ->and($account->secret)->not->toBeNull()
         // IG publishing/comments/insights all authenticate with the linked
         // Page's token, not an IG-specific one.

@@ -92,6 +92,37 @@ it('keeps leads workspace-scoped and allows an authorized user to update their s
     expect(CrmLead::query()->withoutGlobalScopes()->find($foreignLead->id))->not->toBeNull();
 });
 
+it('reports lead record counts by stage without including another workspace', function () {
+    CrmLead::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'status' => LeadStatus::New,
+    ]);
+    CrmLead::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'status' => LeadStatus::Qualified,
+    ]);
+    CrmLead::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'status' => LeadStatus::Qualified,
+    ]);
+
+    $foreignWorkspace = Workspace::factory()->create();
+    CrmLead::factory()->create([
+        'workspace_id' => $foreignWorkspace->id,
+        'status' => LeadStatus::Won,
+    ]);
+
+    $this->get(route('sales.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('leadSummary', [
+            'new' => 1,
+            'qualified' => 2,
+            'opportunity' => 0,
+            'won' => 0,
+            'lost' => 0,
+        ]));
+});
+
 it('deletes leads with personal data and detaches leads when a campaign is deleted', function () {
     $campaign = SalesCampaign::factory()->create([
         'workspace_id' => $this->workspace->id,

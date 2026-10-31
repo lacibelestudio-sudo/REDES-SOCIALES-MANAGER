@@ -8,6 +8,9 @@ services:
         network_mode: none
         working_dir: /var/www/html
         entrypoint: []
+        extra_hosts:
+            - "example.com:93.184.216.34"
+            - "static.klipy.com:93.184.216.34"
         command:
             - /bin/sh
             - -lc
@@ -53,6 +56,70 @@ services:
             - /var/www/html/database/sqlite:rw,noexec,nosuid,size=32m
             - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m
             - /var/www/html/storage:rw,noexec,nosuid,size=64m
+            - /var/www/html/public/build:rw,noexec,nosuid,size=512m,mode=1777
+            - /var/www/html/public/emoji:rw,noexec,nosuid,size=64m,mode=1777
+    visual:
+        profiles: ["visual"]
+        image: shoutrrr:dev
+        pull_policy: never
+        entrypoint: []
+        working_dir: /var/www/html
+        command:
+            - /bin/sh
+            - -lc
+            - |
+                mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs storage/app/private
+                bun run build
+                touch /tmp/rsmanager-visual.sqlite
+                php artisan migrate --force
+                exec php artisan serve --host=0.0.0.0 --port=8080
+        environment:
+            APP_ENV: testing
+            APP_CONFIG_CACHE: /tmp/rsmanager-visual-config.php
+            APP_DEBUG: "false"
+            APP_KEY: "base64:VFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFU="
+            APP_URL: http://localhost:18081
+            DB_CONNECTION: sqlite
+            DB_DATABASE: /tmp/rsmanager-visual.sqlite
+            DB_URL: ""
+            CACHE_STORE: array
+            SESSION_DRIVER: file
+            QUEUE_CONNECTION: sync
+            MAIL_MAILER: array
+            QUEUE_WORKER_ENABLED: "false"
+            SCHEDULER_ENABLED: "false"
+            INERTIA_SSR_ENABLED: "false"
+            SKIP_WAYFINDER_GENERATE: "true"
+        env_file:
+            - path: ./tests/Fixtures/empty-testing.env
+              required: true
+        ports:
+            - "127.0.0.1:18081:8080"
+        networks:
+            - visual-isolated
+        volumes:
+            - type: bind
+              source: .
+              target: /var/www/html
+              read_only: true
+            - type: bind
+              source: ./tests/Fixtures/empty-testing.env
+              target: /var/www/html/.env
+              read_only: true
+            - type: volume
+              source: dev-vendor
+              target: /var/www/html/vendor
+              read_only: true
+            - type: volume
+              source: dev-node-modules
+              target: /var/www/html/node_modules
+              read_only: true
+        tmpfs:
+            - /tmp:rw,noexec,nosuid,size=512m
+            - /var/www/html/bootstrap/cache:rw,noexec,nosuid,size=16m
+            - /var/www/html/storage:rw,noexec,nosuid,size=64m
+            - /var/www/html/public/build:rw,noexec,nosuid,size=512m,mode=1777
+            - /var/www/html/public/emoji:rw,noexec,nosuid,size=64m,mode=1777
 
 volumes:
     dev-vendor:
@@ -61,3 +128,7 @@ volumes:
     dev-node-modules:
         external: true
         name: shoutrrr_dev_node_modules
+
+networks:
+    visual-isolated:
+        internal: true

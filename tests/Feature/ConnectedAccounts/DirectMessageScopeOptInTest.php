@@ -116,6 +116,7 @@ test('bluesky connect records dm_enabled from the dm_access checkbox', function 
             'did' => 'did:plc:dm',
             'handle' => 'dm.bsky.social',
         ]),
+        '*xrpc/chat.bsky.convo.listConvos*' => Http::response(['convos' => []]),
     ]);
 
     test()->post('/accounts/connect/bluesky', [
@@ -151,6 +152,7 @@ test('bluesky connect defaults dm_enabled to false without the checkbox', functi
             'did' => 'did:plc:nodm',
             'handle' => 'nodm.bsky.social',
         ]),
+        '*xrpc/chat.bsky.convo.listConvos*' => Http::response(['convos' => []]),
     ]);
 
     test()->post('/accounts/connect/bluesky', [

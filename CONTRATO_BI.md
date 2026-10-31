@@ -25,7 +25,7 @@ Cada indicador debe informar valor nullable, estado, origen, cuenta/workspace, i
 | Interacciones | Likes + comentarios + reposts de destinos válidos | Etiquetar acumulado de publicaciones del periodo si esa es la fuente |
 | Alcance | Métrica según proveedor y granularidad | No sumar para afirmar alcance único entre cuentas o redes |
 | Engagement rate | Interacciones / denominador declarado × 100 | Denominador cero o ausente produce null; no mezclar fórmulas |
-| Leads | Registros deduplicados del CRM o formularios definidos | Distinguir persona, evento y oportunidad |
+| Leads | Registros del CRM agrupados por etapa declarada | No equivalen a personas únicas, eventos deduplicados ni conversiones atribuidas |
 | CPL | Gasto / leads atribuibles en alcance comparable | Moneda, periodo y atribución explícitos; sin leads, null |
 | ROAS | Ingresos atribuidos / gasto | Diferenciar atribución de plataforma y ventas CRM; sin gasto, null |
 
@@ -90,10 +90,12 @@ combinados en dashboard/reporte/CSV, aislamiento por workspace, límites de
 fecha y zona horaria, diferencia entre `null` y cero, cobertura parcial y
 exportación CSV con UTF-8, comillas, saltos de línea y protección frente a
 fórmulas. TypeScript, Oxfmt, Oxlint, Pint y el análisis PHPStan focalizado
-pasaron. El análisis completo `composer types:check` excedió su timeout de
-300 segundos con 374 de 545 archivos analizados; el entorno informó menos de
-100 MiB libres en `/tmp`, por lo que ese control global queda registrado como
-inconcluso y no se atribuye a un defecto del código.
+pasaron. El análisis global inicial `composer types:check` excedió 300
+segundos con 374/545 archivos, cuando `/tmp` tenía 64 MiB. El tmpfs aislado se
+amplió a 512 MiB; un intento posterior con límite de 1.200 segundos terminó
+por timeout tras 417/570 archivos. El análisis focalizado de `SalesController`
+pasó, pero el control global permanece inconcluso. No se atribuye el timeout a
+memoria ni a un defecto del código sin evidencia.
 
 El build frontend actual produjo un manifest con 146 entradas y 154 archivos
 referenciados presentes. La sesión local autenticada cargó el bundle nuevo sin
@@ -103,3 +105,10 @@ y `Content-Disposition`. Al imprimir se ocultaron navegación y controles de la
 aplicación. El reporte usa resúmenes y tablas, no gráficos; el workspace vacío
 no permite observar series en el dashboard, así que no se añadieron datos
 sintéticos a la base activa.
+
+El resumen CRM añade conteos por etapa declarada para todos los registros del
+workspace autorizado, independientemente de la paginación de la lista. Su
+consulta excluye otros workspaces y no presenta registros como personas únicas,
+conversiones atribuidas ni ventas. La prueba aislada `SalesModuleTest` pasó
+`6 tests, 49 assertions`, incluyendo el aislamiento del resumen entre
+workspaces. Los datos sintéticos se limitaron a esa base SQLite de pruebas.

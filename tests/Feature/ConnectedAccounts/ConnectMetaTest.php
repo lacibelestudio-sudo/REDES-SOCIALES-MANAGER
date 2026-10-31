@@ -81,6 +81,7 @@ function fakeMetaGraphResponses(): void
                 'profile_picture_url' => 'https://x/a.jpg',
             ],
         ]]]),
+        '*/conversations*' => Http::response(['data' => []]),
     ]);
 }
 
@@ -235,6 +236,9 @@ test('store creates a facebook connected account now that facebook is launched',
     expect(Platform::launchedMetaGraphPlatforms())->toBe([Platform::Facebook, Platform::Instagram]);
 
     metaOwnerActingIn();
+    Http::fake([
+        '*/conversations*' => Http::response(['data' => []]),
+    ]);
 
     test()->withSession(['accounts.meta.connect' => [
         'assets' => [
@@ -264,6 +268,9 @@ test('store creates an instagram connected account now that instagram is launche
     expect(Platform::launchedMetaGraphPlatforms())->toBe([Platform::Facebook, Platform::Instagram]);
 
     metaOwnerActingIn();
+    Http::fake([
+        '*/conversations*' => Http::response(['data' => []]),
+    ]);
 
     test()->withSession(['accounts.meta.connect' => [
         'assets' => [

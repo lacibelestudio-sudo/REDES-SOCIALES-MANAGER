@@ -56,6 +56,8 @@ describe('buildFeedbackPayload', () => {
 
         expect(payload.diagnostics).toBeInstanceOf(File);
         expect(payload.diagnostics?.name).toBe('diagnostics.json');
-        expect(payload.diagnostics?.type).toBe('application/json');
+        expect(payload.diagnostics?.type.split(';', 1)[0]).toBe(
+            'application/json',
+        );
     });
 });

@@ -127,14 +127,15 @@ Oxfmt y Oxlint focalizados también pasaron. Pint pasó sobre los archivos PHP
 modificados y el análisis PHPStan focalizado de `tests/TestCase.php` y
 `AnalyticsController.php` terminó sin errores.
 
-El comando completo `composer types:check` no se completó: excedió el timeout
-de 300 segundos al analizar 374 de 545 archivos. El Compose de pruebas
-reservaba únicamente 64 MiB para `/tmp`; una ejecución aislada de diagnóstico
-confirmó ese límite exacto, con 64 MiB disponibles al iniciar. Se amplió el
-`tmpfs` de `/tmp` a 512 MiB solo en `docker-compose.testing.yaml`; no se
-limpiaron volúmenes ni se reiniciaron Docker/WSL. El análisis global debe
-repetirse en este entorno corregido antes de declararlo aprobado. La prueba
-focalizada de PHPStan sí pasó.
+El análisis global inicial `composer types:check` excedió 300 segundos con
+374/545 archivos; entonces el servicio aislado tenía 64 MiB de `tmpfs` en
+`/tmp`. El límite se amplió a 512 MiB únicamente en el Compose de pruebas. El
+31-10 se repitió con `COMPOSER_PROCESS_TIMEOUT=1200`; también terminó por
+timeout, tras 417/570 archivos. PHPStan había iniciado y siguió analizando,
+pero no emitió un resultado final; el control global queda inconcluso. Se
+observó un aviso de Git sobre ownership no confiable del checkout, sin evidencia
+de que causara el timeout. No se atribuye el resultado a memoria ni a una causa
+no demostrada. El análisis focalizado de `SalesController.php` pasó.
 
 El build frontend se completó una vez en el servicio aislado, sin red ni acceso
 a secretos; el checkout de código permaneció en solo lectura. Se validaron 146
@@ -214,12 +215,18 @@ Alcance interno mínimo, sin SaaS/CRM externo:
   necesite el registro; owner/admin pueden eliminar cada registro y la
   eliminación del workspace elimina sus campañas y leads. No se retiene una
   copia con PII en auditoría.
+- El informe agrupa todos los registros del workspace por etapa declarada,
+  sin presentar personas únicas, conversiones atribuidas ni ingresos. La lista
+  interactiva conserva solo los 100 registros más recientes; los totales del
+  informe no se limitan a esa página.
 
 La implementación no declarará ingresos ni ROI. Cualquier futuro reporte
 distinguirá datos declarados, observados y calculados; un valor comercial solo
 se incorporará cuando se defina su fuente, moneda, evento e idempotencia.
-Estado: núcleo interno implementado y pruebas aisladas focalizadas aprobadas;
-la inspección visual y cualquier integración externa siguen pendientes.
+Estado: núcleo interno y resumen de etapas implementados y validados con
+pruebas aisladas, incluida la exclusión de registros de otro workspace. La
+inspección visual y cualquier integración externa siguen pendientes; la
+entrega no se declara cerrada hasta resolver la validación visual.
 
 ## Entrega 6 — Anuncios y SaaS productivo
 
@@ -235,7 +242,8 @@ confirmación humana de gasto. LinkedIn Ads/Google Ads siguen fuera de alcance.
 Antes de clientes reales también deben revisarse facturación, cuotas, backups
 restaurables, observabilidad y despliegue; no activar gasto como parte de QA.
 Estado: planificación interna implementada y validada con pruebas aisladas;
-no se crearon campañas externas ni se activó gasto.
+no se crearon campañas externas ni se activó gasto. La revisión visual aislada
+sigue pendiente, por lo que la entrega no se declara cerrada.
 
 ## Registro de avance
 
@@ -249,8 +257,9 @@ Vitest focalizado en asistencia, analítica, CRM, anuncios e impresión pasó
 Oxfmt global pasaron. El build frontend aislado transformó `9315` módulos y
 comprobó el manifest de JS/CSS en un `tmpfs`; no activó ni reemplazó assets de
 la aplicación local. Pest focalizado registrado previamente pasó CRM/anuncios
-(`9 tests, 72 assertions`) y analítica (`14 tests, 129 assertions`); PHPStan
-nivel 7 pasó sobre `570` archivos. La suite Pest completa previa tuvo
+(`9 tests, 72 assertions`) y analítica (`14 tests, 129 assertions`); un análisis
+PHPStan nivel 7 previo pasó sobre `570` archivos, antes de esta ronda de
+cambios. La suite Pest completa previa tuvo
 `2051` aprobados y `28` fallidos (`7802` assertions); no se repitió porque no
 hubo cambios PHP en esta validación. Vitest completo terminó con `932` tests
 aprobados y `2` fallidos en tests ajenos a estos cambios: timeout al recorrer
@@ -260,6 +269,32 @@ aislada de las nuevas páginas queda pendiente; no se marcaron completas las
 entregas 4–6 ni se desplegaron los assets nuevos.
 Pint en los PHP modificados también pasó al ejecutarse sobre copias temporales
 dentro del contenedor aislado.
+
+31-10-2026: Se agruparon y corrigieron las causas comunes de los fallos
+observados en la ejecución Pest interrumpida (28 fallos observados, sin
+atribuirlos a código previo). La cobertura Feature se completó en lotes:
+382, 197, 182, 179, 143, 292, 247 y 55 pruebas aprobadas; `SalesModuleTest`
+se volvió a ejecutar completo tras añadir el resumen CRM (`6 tests, 49
+assertions`). Unit se repitió completo después de corregir la expectativa
+obsoleta: `402 tests, 1170 assertions`, todo aprobado. Vitest se completó por
+áreas: `943 tests` en `140` archivos, todos aprobados; el test de GIF que
+inicialmente falló bajo concurrencia y el grupo de componentes pasaron con un
+solo worker, sin ampliar timeouts. Oxfmt pasó sobre 437 archivos, Oxlint sobre
+439 archivos (`0 warnings, 0 errors`) y TypeScript pasó. Pint pasó sobre los
+PHP modificados en copias temporales aisladas.
+
+`composer types:check` permanece inconcluso: el intento ampliado terminó por
+timeout a los 1.200 segundos tras analizar 417/570 archivos. El análisis
+focalizado del controlador de ventas pasó; no se declara aprobado el control
+global.
+
+El guard de pruebas rechazó una conexión SQLite de archivo desechable antes de
+la configuración de pruebas y no creó el archivo. El perfil visual migró la
+base propia aislada, pero el navegador integrado no pudo alcanzar el puerto
+publicado ni la IP interna del contenedor en la red `internal`; no se creó una
+sesión sintética ni se insertaron datos. La inspección visual de Entregas 4–6
+permanece pendiente y esas entregas no se declaran cerradas. No se conectaron
+proveedores ni se ejecutaron campañas.
 
 28-10-2026: Se cerró la causa del fallo de build sin retirar la directiva
 `# syntax` ni desactivar BuildKit. El último build previo había fallado al

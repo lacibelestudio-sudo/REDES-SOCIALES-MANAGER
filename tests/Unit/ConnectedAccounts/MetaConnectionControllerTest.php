@@ -52,5 +52,9 @@ test('builds instagram account data from a stashed page asset with a linked ig a
         ->and($data->accessToken)->toBe('PGT1')
         // The IG connector needs the Page id to address the linked Page.
         // dm_enabled mirrors the instance opt-in set above.
-        ->and($data->capabilities)->toBe(['page_id' => 'PAGE1', 'dm_enabled' => true]);
+        ->and($data->capabilities)->toBe([
+            'page_id' => 'PAGE1',
+            'dm_enabled' => true,
+            'instagram_account_type' => 'unknown',
+        ]);
 });

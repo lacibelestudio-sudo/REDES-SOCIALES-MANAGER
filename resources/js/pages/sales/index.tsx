@@ -30,6 +30,7 @@ type Lead = {
 type Props = {
     campaigns: Campaign[];
     leads: Lead[];
+    leadSummary: Record<(typeof LEAD_STATUSES)[number]['value'], number>;
     canManage: boolean;
 };
 
@@ -79,7 +80,12 @@ function ConfirmDelete({
     );
 }
 
-export default function SalesIndex({ campaigns, leads, canManage }: Props) {
+export default function SalesIndex({
+    campaigns,
+    leads,
+    leadSummary,
+    canManage,
+}: Props) {
     return (
         <>
             <Head title="Campaigns and leads" />
@@ -321,6 +327,30 @@ export default function SalesIndex({ campaigns, leads, canManage }: Props) {
                         Store only a name and/or email. A lead stage is not a
                         confirmed sale or revenue.
                     </p>
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-semibold">
+                            Lead records by stage
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                            Counts cover all records in this workspace; they are
+                            not deduplicated people or attributed conversions.
+                        </p>
+                        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                            {LEAD_STATUSES.map((status) => (
+                                <div
+                                    key={status.value}
+                                    className="rounded-lg border border-border p-3"
+                                >
+                                    <dt className="text-xs text-muted-foreground">
+                                        {status.label}
+                                    </dt>
+                                    <dd className="text-lg font-semibold">
+                                        {leadSummary[status.value]}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
                     {canManage && (
                         <Form
                             {...SalesController.storeLead.form()}

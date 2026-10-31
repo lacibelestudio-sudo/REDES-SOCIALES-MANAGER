@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\LeadStatus;
 use App\Enums\SalesCampaignStatus;
 use App\Http\Requests\Commercial\StoreCrmLeadRequest;
 use App\Http\Requests\Commercial\StoreSalesCampaignRequest;
@@ -25,6 +26,24 @@ class SalesController extends Controller
 
         abort_unless($user->can('viewAny', SalesCampaign::class), 403);
         abort_unless($user->can('viewAny', CrmLead::class), 403);
+
+        $leadSummary = array_fill_keys(
+            array_map(
+                fn (LeadStatus $status): string => $status->value,
+                LeadStatus::cases(),
+            ),
+            0,
+        );
+
+        foreach (
+            CrmLead::query()
+                ->where('workspace_id', $workspaceId)
+                ->selectRaw('status, COUNT(*) AS record_count')
+                ->groupBy('status')
+                ->pluck('record_count', 'status') as $status => $recordCount
+        ) {
+            $leadSummary[$status] = (int) $recordCount;
+        }
 
         return Inertia::render('sales/index', [
             'campaigns' => SalesCampaign::query()
@@ -59,6 +78,7 @@ class SalesController extends Controller
                     'campaign_id' => $lead->sales_campaign_id,
                     'campaign_name' => $lead->campaign?->name,
                 ])->all(),
+            'leadSummary' => $leadSummary,
             'canManage' => $user->can('create', SalesCampaign::class)
                 && $user->can('create', CrmLead::class),
         ]);
