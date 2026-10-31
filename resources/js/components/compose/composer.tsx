@@ -66,6 +66,7 @@ import type { GifItem } from '@/types/gifs';
 import CharCounter from './char-counter';
 import { ComposerToolbar } from './composer-toolbar';
 import { ConflictDialog } from './conflict-dialog';
+import { ContentAssistantPanel } from './content-assistant-panel';
 import DestinationSelector from './destination-selector';
 import EditorBody, { type EditorBodyHandle } from './editor-body';
 import { ImageEditor } from './image-editor';
@@ -1259,6 +1260,19 @@ export default function Composer({
                             : undefined
                     }
                 />
+
+                {!readOnly && (
+                    <ContentAssistantPanel
+                        key={activeAccount?.id ?? 'default'}
+                        platform={activeAccount?.platform ?? 'x'}
+                        initialBrief={activeSegments.join('\n\n')}
+                        currentDraft={activeSegments.join('\n\n')}
+                        disabled={state.segmentBreaks.length > 0}
+                        onApply={(text) =>
+                            handleSegments([text], state.segmentBreaks)
+                        }
+                    />
+                )}
 
                 {!readOnly && (
                     <input

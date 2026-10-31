@@ -59,3 +59,5 @@ require __DIR__.'/posts.php';
 require __DIR__.'/engagement.php';
 require __DIR__.'/messaging.php';
 require __DIR__.'/feedback.php';
+require __DIR__.'/commercial.php';
+require __DIR__.'/ads.php';

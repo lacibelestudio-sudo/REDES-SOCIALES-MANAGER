@@ -1,7 +1,9 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
 
+import AdPlanController from '@/actions/App/Http/Controllers/AdPlanController';
 import PostingScheduleController from '@/actions/App/Http/Controllers/Posts/PostingScheduleController';
+import SalesController from '@/actions/App/Http/Controllers/SalesController';
 import SyncPipelinesController from '@/actions/App/Http/Controllers/Settings/SyncPipelinesController';
 import AppLogo from '@/components/layout/app-logo';
 import { NavUser } from '@/components/layout/nav-user';
@@ -332,6 +334,48 @@ export function AppSidebar({
                         </SidebarMenu>
                     </SidebarGroupContent>
                 </SidebarGroup>
+
+                {showWorkspaceSettings && (
+                    <SidebarGroup>
+                        <SidebarGroupLabel>Growth</SidebarGroupLabel>
+                        <SidebarGroupContent>
+                            <SidebarMenu>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton
+                                        tooltip="Campaigns and leads"
+                                        isActive={isCurrentUrl(
+                                            SalesController.index().url,
+                                        )}
+                                        render={
+                                            <Link
+                                                href={SalesController.index()}
+                                            />
+                                        }
+                                    >
+                                        <Users aria-hidden="true" />
+                                        <span>Campaigns and leads</span>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                                <SidebarMenuItem>
+                                    <SidebarMenuButton
+                                        tooltip="Ad plan drafts"
+                                        isActive={isCurrentUrl(
+                                            AdPlanController.index().url,
+                                        )}
+                                        render={
+                                            <Link
+                                                href={AdPlanController.index()}
+                                            />
+                                        }
+                                    >
+                                        <Blocks aria-hidden="true" />
+                                        <span>Ad plan drafts</span>
+                                    </SidebarMenuButton>
+                                </SidebarMenuItem>
+                            </SidebarMenu>
+                        </SidebarGroupContent>
+                    </SidebarGroup>
+                )}
 
                 {showWorkspaceSettings && (
                     <SidebarGroup>

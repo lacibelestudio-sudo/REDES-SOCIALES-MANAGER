@@ -1,0 +1,197 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { ContentAssistantPanel } from '@/components/compose/content-assistant-panel';
+
+describe('ContentAssistantPanel', () => {
+    it('keeps the simulated suggestion editable until a human applies it', async () => {
+        const onApply = vi.fn();
+
+        render(
+            <ContentAssistantPanel
+                platform="linkedin"
+                initialBrief="A product update"
+                currentDraft="A product update"
+                disabled={false}
+                onApply={onApply}
+            />,
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /writing assistant/i }),
+        );
+        expect(
+            screen.getByText(/does not call an AI provider/i),
+        ).toBeInTheDocument();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Generate simulated suggestion',
+            }),
+        );
+
+        const suggestion = await screen.findByRole('textbox', {
+            name: 'Editable suggestion',
+        });
+        expect(suggestion).toHaveValue(
+            'A professional perspective:\n\nA product update\n\nHow has your team approached this?',
+        );
+
+        fireEvent.change(suggestion, {
+            target: { value: 'Reviewed and edited copy' },
+        });
+        expect(onApply).not.toHaveBeenCalled();
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Review and apply to draft',
+            }),
+        );
+        expect(onApply).not.toHaveBeenCalled();
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Confirm replacement' }),
+        );
+
+        expect(onApply).toHaveBeenCalledOnce();
+        expect(onApply).toHaveBeenCalledWith('Reviewed and edited copy');
+        expect(
+            screen.getByRole('button', { name: 'Restore previous draft' }),
+        ).toBeInTheDocument();
+        expect(screen.getByText(/Nothing was published/i)).toBeInTheDocument();
+
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Restore previous draft' }),
+        );
+        expect(onApply).toHaveBeenLastCalledWith('A product update');
+        expect(
+            screen.getByText(/previous draft was restored/i),
+        ).toBeInTheDocument();
+    });
+
+    it('does not offer generated copy for threaded posts', () => {
+        render(
+            <ContentAssistantPanel
+                platform="x"
+                initialBrief="Thread"
+                currentDraft="Thread"
+                disabled
+                onApply={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /writing assistant/i }),
+        );
+
+        expect(screen.getByText(/not threaded posts/i)).toBeInTheDocument();
+        expect(
+            screen.queryByRole('button', {
+                name: 'Generate simulated suggestion',
+            }),
+        ).not.toBeInTheDocument();
+    });
+
+    it('requires a brief before generating a suggestion', async () => {
+        render(
+            <ContentAssistantPanel
+                platform="instagram"
+                initialBrief=""
+                currentDraft=""
+                disabled={false}
+                onApply={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /writing assistant/i }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Generate simulated suggestion',
+            }),
+        );
+
+        expect(
+            await screen.findByText(
+                'Enter a brief before generating a suggestion.',
+            ),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('textbox', { name: 'Editable suggestion' }),
+        ).not.toBeInTheDocument();
+    });
+
+    it('surfaces adapter failures without changing the existing draft', async () => {
+        const onApply = vi.fn();
+
+        render(
+            <ContentAssistantPanel
+                platform="facebook"
+                initialBrief="Existing draft"
+                currentDraft="Existing draft"
+                disabled={false}
+                onApply={onApply}
+                assistant={{
+                    generate: async () => ({
+                        status: 'unavailable',
+                        provider: 'simulated',
+                    }),
+                }}
+            />,
+        );
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /writing assistant/i }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Generate simulated suggestion',
+            }),
+        );
+
+        expect(
+            await screen.findByText(/Your draft was not changed/i),
+        ).toBeInTheDocument();
+        expect(onApply).not.toHaveBeenCalled();
+    });
+
+    it('does not apply a suggestion if the draft changed after generation', async () => {
+        const onApply = vi.fn();
+        const props = {
+            platform: 'linkedin' as const,
+            initialBrief: 'Original draft',
+            currentDraft: 'Original draft',
+            disabled: false,
+            onApply,
+        };
+        const { rerender } = render(<ContentAssistantPanel {...props} />);
+
+        fireEvent.click(
+            screen.getByRole('button', { name: /writing assistant/i }),
+        );
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Generate simulated suggestion',
+            }),
+        );
+        await screen.findByRole('textbox', { name: 'Editable suggestion' });
+
+        rerender(
+            <ContentAssistantPanel
+                {...props}
+                currentDraft="A newer unsaved edit"
+            />,
+        );
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Review and apply to draft',
+            }),
+        );
+
+        expect(onApply).not.toHaveBeenCalled();
+        expect(
+            screen.getByText(/draft changed after generation/i),
+        ).toBeInTheDocument();
+    });
+});

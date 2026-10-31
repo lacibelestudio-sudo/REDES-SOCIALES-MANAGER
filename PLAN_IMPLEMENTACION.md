@@ -102,7 +102,7 @@ conexiones reales ni evidencia de acceso. Por tanto, ninguna lectura de API ni
 publicación real fue autorizada o ejecutada. La matriz registra la validación
 real como pendiente y Entrega 2 permanece abierta.
 
-## Entrega 3 — Dashboard y reportes (implementada; cierre local bloqueado)
+## Entrega 3 — Dashboard y reportes (implementada y validada)
 
 La pantalla de analítica incorpora filtros por periodo, plataforma y cuenta,
 restringidos al workspace autorizado. Resumen, gráficos y ranking usan el mismo
@@ -115,72 +115,151 @@ se muestra cuando hay evidencia. Los endpoints vuelven a autorizar el acceso,
 rechazan cuentas ajenas al workspace, escapan CSV y neutralizan fórmulas. No
 hay enlaces públicos de reportes ni datos de prueba persistidos.
 
-Los controles del candidato pasaron: Pest focalizado (`70 tests, 571
-assertions`), Vitest focalizado (7 pruebas de analytics y 11 de composer),
-Oxfmt, Oxlint (0 warnings, 0 errors), TypeScript, Pint y Larastan/PHPStan nivel
-7. `build:ssr` y la construcción Docker también pasaron. Los estados de sin
-datos, cero válido, cobertura parcial, límites de fecha/zona horaria,
-autorización de workspace y seguridad CSV se verificaron con pruebas aisladas.
+La prevención de pruebas está operativa: el Compose aislado no tiene red,
+socket Docker, volúmenes de datos de la app ni credenciales de proveedores;
+monta el código y dependencias en solo lectura y usa SQLite `:memory:`. El
+guard rechaza una ruta SQLite de archivo desechable antes de crearla. Pest se
+ejecutó únicamente en ese servicio y pasó `23 tests, 395 assertions`; cubre
+filtros combinados y aislamiento de workspaces, fechas/zona horaria, `null`,
+cero, cobertura parcial y la respuesta CSV con UTF-8, valores escapados,
+fórmulas potenciales y saltos de línea. Vitest pasó `13 tests`; TypeScript,
+Oxfmt y Oxlint focalizados también pasaron. Pint pasó sobre los archivos PHP
+modificados y el análisis PHPStan focalizado de `tests/TestCase.php` y
+`AnalyticsController.php` terminó sin errores.
 
-La imagen desplegada antes de la corrección visual era `shoutrrr:dev`, digest
-`sha256:3aadbfd3d4b59d6f3ccdcc4e5588ff06764ab7155fdc69833df231d22b1dc466`.
-En una sesión autenticada se inspeccionaron analítica y el reporte imprimible:
-los filtros de periodo, plataforma y cuenta se conservaron y el reporte mostró
-sus metadatos. La emulación de impresión reveló que el encabezado y la barra
-lateral seguían visibles. El enlace CSV conservó los filtros, pero no se
-verificaron la respuesta ni el contenido descargado. Tampoco se completó la
-revisión de conexiones/compositor ni la comprobación de errores del navegador.
+El comando completo `composer types:check` no se completó: excedió el timeout
+de 300 segundos al analizar 374 de 545 archivos. El Compose de pruebas
+reservaba únicamente 64 MiB para `/tmp`; una ejecución aislada de diagnóstico
+confirmó ese límite exacto, con 64 MiB disponibles al iniciar. Se amplió el
+`tmpfs` de `/tmp` a 512 MiB solo en `docker-compose.testing.yaml`; no se
+limpiaron volúmenes ni se reiniciaron Docker/WSL. El análisis global debe
+repetirse en este entorno corregido antes de declararlo aprobado. La prueba
+focalizada de PHPStan sí pasó.
 
-Hay una corrección local en
-`resources/js/layouts/app/app-sidebar-layout.tsx`,
-`resources/js/components/layout/app-sidebar.tsx`,
-`resources/js/components/layout/app-sidebar-header.tsx` y
-`resources/js/components/ui/sidebar.tsx` para ocultar el chrome de la app y
-expandir el reporte al imprimir. Aún no se han ejecutado formato, lint ni
-TypeScript sobre esos archivos; la corrección tampoco está desplegada.
+El build frontend se completó una vez en el servicio aislado, sin red ni acceso
+a secretos; el checkout de código permaneció en solo lectura. Se validaron 146
+entradas del manifest y los 154 archivos referenciados. Los assets actuales
+están disponibles en `public/build`; la aplicación respondió con el bundle
+`app-DQZ_omR6.js`, `public/hot` sigue ausente y Vite/HMR no se inició. Solo se
+recargaron de forma controlada los workers de Octane para que leyeran el nuevo
+manifest; no se recreó el contenedor ni se reinició Docker/WSL.
 
-Tras el reinicio manual de Docker Desktop, `shoutrrr-app-1` respondió
-`running/healthy` con la imagen anterior y conservó los volúmenes
-`shoutrrr_storage` y `shoutrrr_sqlite`; `/analytics` respondió HTTP 302 a
-`/login`. La cola y el scheduler estaban deshabilitados mediante overrides de
-la ejecución anterior, sin cambios a `.env`, Compose ni volúmenes.
+La inspección autenticada respondió HTTP 200 para analítica, reporte imprimible
+y CSV. La instancia no tiene cuentas conectadas ni posts del workspace; la
+pantalla muestra correctamente ausencia de mediciones y cero posts, sin añadir
+datos. Con un filtro de plataforma activo se mostró «Reset filters»; al usarlo,
+se volvió a 90 días sin plataforma ni cuenta. No hubo errores de consola ni
+respuestas fallidas de assets. La respuesta CSV fue `text/csv; charset=UTF-8`
+con `Content-Disposition` y conservó los filtros. En modo impresión se
+ocultaron la navegación lateral y los controles de aplicación. El reporte
+imprimible usa resumen y tablas, no gráficos; no hubo gráficos que pudieran
+cortarse. La instancia vacía tampoco permitió una inspección visual de un
+gráfico con series, aunque sus datos y estados están cubiertos por pruebas
+aisladas.
 
-El único reintento posterior usó:
-`docker --context desktop-linux compose --progress plain -f docker-compose.development.yaml build --build-arg BUILDKIT_SYNTAX=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e app`.
-La resolución del frontend terminó (`#2 DONE 21.1s`); `build:ssr` ya había
-terminado correctamente en el intento previo posterior a la corrección y esta
-vez fue acierto de caché. La copia de `node_modules` también fue acierto de
-caché, Composer terminó en 235.6 s y el build avanzó a
-`#52 exporting to image / exporting layers`. No hubo salida
-adicional durante aproximadamente 24 minutos; el CLI se detuvo de forma
-controlada sin código de salida final. Luego `docker version` no respondió en
-30 s y `/analytics` agotó su tiempo de espera en 5 s. El estado actual del
-Engine y del contenedor no se pudo confirmar. El usuario confirmó que hay
-otros servicios activos; no se hizo un segundo reinicio de Docker Desktop para
-evitar interrumpirlos. En el host Windows no están disponibles Bun, Node.js,
-PHP ni Composer, ni los binarios locales de formato/lint/tipos; por eso no se
-pudieron ejecutar esos controles sin Docker. No se repitió el build.
+Entrega 3 queda cerrada para el alcance implementado y validado en entorno
+aislado y local. No implica mediciones reales ni validación con proveedores.
+La única limitación visual es la ausencia de series en el workspace; no se
+inventaron datos. Entrega 2 sigue abierta por OAuth, publicación y métricas de
+proveedores reales. HMR queda como pendiente independiente.
 
-No se usaron datos autofill, no se añadieron datos persistentes ni se inició
-OAuth o publicación. Entrega 2 sigue abierta por validación real externa.
-Entrega 3 no se declara completada: falta validar la corrección, construir y
-desplegar esa imagen, comprobar CSV y completar la revisión visual.
+## Entrega 4 — Creación asistida y aprobación (simulación local implementada)
 
-## Entrega 4 — Creación asistida y aprobación
+El compositor ofrece una asistencia opcional y claramente marcada como
+simulada. Construye sugerencias deterministas según la red seleccionada, permite
+editarlas y solo aplica el texto al editor del borrador tras una acción humana.
+Se limita a mensajes únicos; no altera hilos ni estados de envío y no puede
+publicar. No integra proveedor, consume API, crea gastos ni agrega dependencias.
+El borrador se guarda mediante el autosave y las rutas/permisos ya existentes
+del compositor.
 
-Inventariar capacidades actuales antes de añadirlas. Proponer proveedor IA, costes por workspace, almacenamiento de borradores y control de cuotas. Diseñar estados editoriales sin confluir con estados de envío. Aceptación: el modelo no publica directamente; cambios tras aprobación requieren una política explícita; permisos y auditoría por workspace.
+Validado en el entorno aislado: 11 pruebas Vitest para la adaptación por red,
+brief vacío, edición, aplicación voluntaria, mensaje de no publicación y
+exclusión de hilos; TypeScript, Oxfmt y Oxlint focalizados pasaron. Esta
+simulación no es una integración real ni una evaluación de calidad de modelos.
+Campos internos previstos: propuesta temporal en el compositor, texto editable,
+plataforma, resultado del adaptador y decisión humana; el borrador aceptado se
+conserva en el modelo Post existente. La simulación no transmite ni persiste el
+brief fuera del borrador existente y no escribe el resultado automáticamente.
+La futura integración debe persistir solo la propuesta necesaria, identificar
+proveedor/modelo y autor, aplicar límites/cuotas por workspace y permitir
+eliminación por el workspace; no registrar prompts ni PII en logs. Owner/admin
+pueden gestionar configuración de IA; miembros conservan permisos actuales de
+edición. La aprobación editorial y el estado de publicación deben permanecer
+separados si se adopta un flujo persistente.
+
+Pendientes para cerrar Entrega 4: proveedor, cuotas/costes por workspace,
+retención/auditoría persistente, política de aprobación final, revisión visual
+aislada e integración real. La generación real queda expresamente pendiente;
+la ausencia de claves no bloquea la simulación ni las pruebas internas.
 
 ## Entrega 5 — Campañas, UTM y CRM
 
-Elegir CRM con el propietario y definir eventos/identidades. Registrar fuente, campaña, leads, oportunidades e ingresos verificables. Ingesta idempotente, deduplicación y minimización de PII. Aceptación: evento repetido no duplica ingresos; no se mezclan monedas; atribución y ventas reales se distinguen.
+Alcance interno mínimo, sin SaaS/CRM externo:
+
+- Campaña: nombre, `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`,
+  `utm_content`, fechas opcionales y estado. Cada campo UTM describe el origen
+  declarado del enlace, no una atribución calculada.
+- Lead: nombre opcional, email opcional, campaña opcional y estado comercial
+  `new`, `qualified`, `opportunity`, `won` o `lost`. Debe suministrarse nombre
+  o email. Se excluyen teléfono, notas libres, scraping, enriquecimiento y
+  valores de venta para minimizar PII y evitar conversiones/ingresos sin
+  evidencia. Las oportunidades no son ventas confirmadas.
+- Los registros pertenecen al workspace y no se aceptan IDs de workspace desde
+  formularios. Todos los miembros autorizados del workspace pueden consultar;
+  owner/admin pueden crear, editar y eliminar. Se vuelve a verificar el
+  workspace en cada operación.
+- No hay envío comercial, sincronización externa, tracking de navegación ni
+  atribución automática. La conservación continúa mientras el workspace
+  necesite el registro; owner/admin pueden eliminar cada registro y la
+  eliminación del workspace elimina sus campañas y leads. No se retiene una
+  copia con PII en auditoría.
+
+La implementación no declarará ingresos ni ROI. Cualquier futuro reporte
+distinguirá datos declarados, observados y calculados; un valor comercial solo
+se incorporará cuando se defina su fuente, moneda, evento e idempotencia.
+Estado: núcleo interno implementado y pruebas aisladas focalizadas aprobadas;
+la inspección visual y cualquier integración externa siguen pendientes.
 
 ## Entrega 6 — Anuncios y SaaS productivo
 
-Evaluar Meta Ads inicialmente, permisos, límites de gasto y aprobación humana. LinkedIn Ads/Google Ads son alcance posterior propuesto. Revisar facturación existente, cuotas, backups restaurables, observabilidad y despliegue antes de clientes reales. No activar gasto publicitario como efecto de una prueba técnica.
+Se limita la fase interna a borradores de planificación para Meta Ads: nombre,
+objetivo, intervalo, presupuesto planeado y moneda. No se guardan tokens,
+identificadores externos ni gasto observado. Owner/admin gestionan borradores;
+miembros consultan. El presupuesto planeado nunca se etiqueta como gasto.
+No hay endpoint, job o botón para activar, enviar o comprar anuncios. Cada
+borrador se elimina por owner/admin o en cascada al borrar el workspace.
+
+Meta Ads real queda pendiente de autorización, productos/permisos, límites y
+confirmación humana de gasto. LinkedIn Ads/Google Ads siguen fuera de alcance.
+Antes de clientes reales también deben revisarse facturación, cuotas, backups
+restaurables, observabilidad y despliegue; no activar gasto como parte de QA.
+Estado: planificación interna implementada y validada con pruebas aisladas;
+no se crearon campañas externas ni se activó gasto.
 
 ## Registro de avance
 
 Actualizar aquí fecha, commit, alcance, pruebas ejecutadas y limitaciones por entrega. No marcar completado un conector por existir en código ni un dashboard por tener datos simulados.
+
+30-10-2026: Se corrigió en la interfaz de CRM que miembros sin permiso de
+gestión pudieran editar campañas existentes: los controles de actualización
+ahora quedan deshabilitados y la prueba de permisos lo verifica. QA aislado:
+Vitest focalizado en asistencia, analítica, CRM, anuncios e impresión pasó
+`30 tests` en `6` archivos. TypeScript, Oxlint (`0` warnings, `0` errors) y
+Oxfmt global pasaron. El build frontend aislado transformó `9315` módulos y
+comprobó el manifest de JS/CSS en un `tmpfs`; no activó ni reemplazó assets de
+la aplicación local. Pest focalizado registrado previamente pasó CRM/anuncios
+(`9 tests, 72 assertions`) y analítica (`14 tests, 129 assertions`); PHPStan
+nivel 7 pasó sobre `570` archivos. La suite Pest completa previa tuvo
+`2051` aprobados y `28` fallidos (`7802` assertions); no se repitió porque no
+hubo cambios PHP en esta validación. Vitest completo terminó con `932` tests
+aprobados y `2` fallidos en tests ajenos a estos cambios: timeout al recorrer
+fuentes en `inertia-cache-policy.test.ts` y expectativa de MIME sin
+`charset=utf-8` en `build-feedback-payload.test.ts`. La inspección visual
+aislada de las nuevas páginas queda pendiente; no se marcaron completas las
+entregas 4–6 ni se desplegaron los assets nuevos.
+Pint en los PHP modificados también pasó al ejecutarse sobre copias temporales
+dentro del contenedor aislado.
 
 28-10-2026: Se cerró la causa del fallo de build sin retirar la directiva
 `# syntax` ni desactivar BuildKit. El último build previo había fallado al
@@ -756,3 +835,70 @@ abiertas.
   Docker/WSL ni tocar otros proyectos. Después de esa comprobación se puede
   validar HTTP y abrir el explorador. Las validaciones funcionales de
   filtros, impresión y CSV y HMR siguen pendientes.
+
+29-10-2026 23:04 -05:00 — Incidente de pruebas y aislamiento preventivo:
+
+- La ejecución previa de `AnalyticsPageTest` ocurrió dentro de
+  `rsmanager-app-local-vite`. Aunque `phpunit.xml` declaraba SQLite en memoria,
+  las variables heredadas del contenedor tenían precedencia porque no se
+  marcaban `force`; el proceso quedó en `APP_ENV=local` y usó el archivo
+  SQLite montado desde `shoutrrr_sqlite`. `RefreshDatabase` ejecutó
+  `migrate:fresh` contra esa conexión. No se volvieron a ejecutar pruebas,
+  migraciones ni seeders durante esta revisión.
+- Se creó y verificó un snapshot consistente de la base con la API de backup
+  de SQLite, incluida la comprobación de integridad. Su SHA-256 coincide con
+  el archivo local preservado fuera del repositorio y de la carpeta de sesión.
+  La copia contiene cero usuarios, workspaces y membresías; no se encontró
+  una copia SQLite anterior independiente. Los contenedores antiguos
+  inspeccionados comparten `shoutrrr_sqlite` y no son respaldos.
+- Los logs preservados registran un timeout PHP de 30 segundos durante la
+  búsqueda de usuario por token de “remember me”. Es evidencia del HTTP 500
+  actual, distinta del rechazo de credenciales; no demuestra la causa interna
+  del bloqueo de la consulta. También existen errores históricos de manifiesto
+  Vite, que no se atribuyen al error más reciente.
+- Prevención implementada: `phpunit.xml` fuerza el entorno y los drivers de
+  base de datos, sesión, caché y cola; `Tests\TestCase::createApplication()`
+  aborta antes de que `RefreshDatabase` pueda correr si la configuración
+  efectiva no es SQLite `:memory:` sin URL. `docker-compose.testing.yaml`
+  prepara un servicio separado sin montar el volumen SQLite ni el storage de
+  la aplicación; el `.env` real se enmascara con un archivo vacío de pruebas,
+  `database/sqlite` también queda cubierto por `tmpfs`, solo se monta `vendor`
+  como volumen externo de dependencias y no hay montaje de socket Docker,
+  dispositivos ni variables con credenciales de proveedores.
+  Código y dependencias se montan en solo lectura; storage, caché de bootstrap
+  y temporales son `tmpfs`. El comando preparado para cuando se autorice
+  reanudarlas es:
+  `docker compose -f docker-compose.testing.yaml --profile testing run --rm tests`.
+  El modelo Compose pasó `docker compose config`, pero no se levantó el
+  contenedor ni se ejecutaron las pruebas; la protección aún no se ha ejercido
+  en runtime y las pruebas permanecen suspendidas, conforme a la instrucción
+  del usuario.
+- Procedimiento preparado, no ejecutado, para crear un acceso nuevo si se
+  autoriza: después de resolver el HTTP 500, abrir `/register` en el navegador
+  local y enviar el formulario Fortify. Al no existir todavía un propietario,
+  `CreateNewUser` permite el primer registro, `InstanceSettings` lo promueve a
+  propietario de instancia y `WorkspaceProvisioningService` crea su workspace
+  personal con membresía owner. Introducir una contraseña nueva desde el
+  navegador usando un gestor de contraseñas; no pasarla por comandos, archivos
+  de logs ni chat. Esto sería una cuenta/workspace vacíos, no una recuperación:
+  las publicaciones, conexiones y métricas anteriores no están en la base
+  disponible.
+- Las Entregas 3 y 4 siguen suspendidas. No se cambió la base activa ni se
+  reinició ningún servicio. No se ejecutó código de recuperación ni se publicó
+  la evidencia.
+- 29-10-2026 23:12 -05:00: Se volvió a comprobar la copia temporal transferida
+  desde el archivo estable de Windows en su ruta explícita; `PRAGMA
+  integrity_check` respondió `ok`, los conteos de usuarios/workspaces/
+  membresías siguen en cero y el SHA-256 coincide con el original. En páginas
+  nuevas del navegador, `GET /login` y `GET /register` mostraron sus formularios
+  y respondieron HTTP 200; no se envió ningún formulario. Los logs de la app en
+  la ventana reciente no registraron errores para estas solicitudes, por lo
+  que el timeout no se reprodujo en esta navegación limpia, pero su causa no
+  está resuelta. La URL local disponible para que el propietario se registre
+  personalmente es `http://localhost:8080/register`.
+- La inspección final del modelo de pruebas confirma que el directorio SQLite
+  y `storage` son `tmpfs`, no se monta el volumen de datos ni el socket Docker,
+  no se pasa ninguna variable con credenciales de proveedores y el `.env` real
+  queda cubierto por un archivo vacío de solo lectura. El guard se ejecuta en
+  `createApplication()` antes de `setUpTraits()`/`RefreshDatabase`. El modelo
+  Compose y los archivos se inspeccionaron sin ejecutar el servicio ni tests.

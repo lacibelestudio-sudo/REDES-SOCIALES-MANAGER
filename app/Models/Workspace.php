@@ -200,6 +200,30 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<SalesCampaign, $this>
+     */
+    public function salesCampaigns(): HasMany
+    {
+        return $this->hasMany(SalesCampaign::class);
+    }
+
+    /**
+     * @return HasMany<CrmLead, $this>
+     */
+    public function crmLeads(): HasMany
+    {
+        return $this->hasMany(CrmLead::class);
+    }
+
+    /**
+     * @return HasMany<AdPlan, $this>
+     */
+    public function adPlans(): HasMany
+    {
+        return $this->hasMany(AdPlan::class);
+    }
+
+    /**
      * @return HasMany<SyncPipeline, $this>
      */
     public function syncPipelines(): HasMany
